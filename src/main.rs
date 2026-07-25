@@ -36,7 +36,6 @@ async fn main() {
     let mut invert_pan = true;
 
     let mut show_leaves = true;
-    let mut leaf_timer: f32 = 0.0;
     const LEAF_GROW_DURATION: f32 = 1.0; // 1.0 second growth animation
 
     loop {
@@ -47,7 +46,6 @@ async fn main() {
         // Reset Simulation
         if is_key_pressed(KeyCode::R) {
             sim.reset(trunk_start, trunk_length, trunk_thickness);
-            leaf_timer = 0.0;
         }
 
         // Keyboard Zoom Shortcuts (+ / - or = / -)
@@ -85,12 +83,22 @@ async fn main() {
         // --- UPDATE SIMULATION ---
         sim.update(delta_time);
 
-        // Update Leaf Growth Timer
-        if sim.is_finished() && show_leaves {
-            leaf_timer = (leaf_timer + delta_time).min(LEAF_GROW_DURATION);
-        } else if !show_leaves {
-            // Reset timer when toggled off
-            leaf_timer = 0.0;
+        // Update Leaf Growth Timers
+        if show_leaves {
+            for branch in &mut sim.branches {
+                // If it is a terminal branch, grow its leaf
+                if let BranchState::FullyGrown { ref child_indices } = branch.state {
+                    if child_indices.is_empty() {
+                        branch.leaf_timer =
+                            (branch.leaf_timer + delta_time).min(LEAF_GROW_DURATION);
+                    }
+                }
+            }
+        } else {
+            // Reset all timers if toggle is turned off
+            for branch in &mut sim.branches {
+                branch.leaf_timer = 0.0;
+            }
         }
 
         // --- RENDER LAYER ---
@@ -109,24 +117,24 @@ async fn main() {
         // Activate world space camera
         set_camera(&camera);
 
-        // Render world elements (branches)
+        // Draw branches
         for branch in &sim.branches {
             let start = branch.start_point;
             let end = branch.end_point();
-
             draw_line(start.x, start.y, end.x, end.y, branch.thickness, DARKBROWN);
         }
 
-        if sim.is_finished() && show_leaves && leaf_timer > 0.0 {
-            // Progress normalized between 0.0 and 1.0
-            let progress = (leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
-
-            // Quadratic Ease-Out: 1 - (1 - t)^2 for smooth popping effect
-            let scale = 1.0 - (1.0 - progress) * (1.0 - progress);
-
+        // Draw leaves
+        if show_leaves {
             for branch in &sim.branches {
                 if let BranchState::FullyGrown { ref child_indices } = branch.state {
-                    if child_indices.is_empty() {
+                    if child_indices.is_empty() && branch.leaf_timer > 0.0 {
+                        // Progress normalized between 0.0 and 1.0
+                        let progress = (branch.leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
+
+                        // Quadratic Ease-Out: 1 - (1 - t)^2 for smooth popping effect
+                        let scale = 1.0 - (1.0 - progress) * (1.0 - progress);
+
                         let end = branch.end_point();
 
                         // Multiply final radius by animated scale

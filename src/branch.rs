@@ -16,6 +16,7 @@ pub struct Branch {
     pub growth_rate: f32,
     pub state: BranchState,
     pub parent_index: Option<usize>,
+    pub leaf_timer: f32,
     pub gravitropism_weight: f32, // Sensitivity to gravity (upward pull)
     pub phototropism_weight: f32, // Sensitivity to light direction
 }
@@ -37,6 +38,7 @@ impl Branch {
             growth_rate: 50.0,
             state: BranchState::Growing,
             parent_index,
+            leaf_timer: 0.0,
             gravitropism_weight: 1.0,
             phototropism_weight: 0.5, // Phototropism often dominates young tips
         }
