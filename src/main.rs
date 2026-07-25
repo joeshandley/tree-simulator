@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use tree_simulator::{TreeSimulation, Vector2D};
+use tree_simulator::{BranchState, TreeSimulation, Vector2D};
 
 mod ui;
 
@@ -34,6 +34,8 @@ async fn main() {
     let mut camera_target = default_camera_target;
     let mut zoom_level: f32 = 1.0;
     let mut invert_pan = true;
+
+    let mut show_leaves = false;
 
     loop {
         let delta_time = get_frame_time();
@@ -104,6 +106,31 @@ async fn main() {
             draw_line(start.x, start.y, end.x, end.y, branch.thickness, DARKBROWN);
         }
 
+        if sim.is_finished() && show_leaves {
+            for branch in &sim.branches {
+                if let BranchState::FullyGrown { ref child_indices } = branch.state {
+                    if child_indices.is_empty() {
+                        let end = branch.end_point();
+                        let rx = branch.thickness * 5.0;
+                        let ry = branch.thickness * 3.0;
+                        let angle = branch.angle.to_degrees();
+                        let outline_thickness = 0.2;
+
+                        draw_ellipse(
+                            end.x,
+                            end.y,
+                            rx + outline_thickness,
+                            ry + outline_thickness,
+                            angle,
+                            BLACK,
+                        );
+
+                        draw_ellipse(end.x, end.y, rx, ry, angle, DARKGREEN);
+                    }
+                }
+            }
+        }
+
         // Switch back to default screen space camera for UI overlay
         set_default_camera();
 
@@ -128,8 +155,23 @@ async fn main() {
         );
 
         // Call our function cleanly via `ui::draw_toggle_button`
-        if ui::draw_toggle_button(620.0, 15.0, 160.0, 35.0, "Pan Drag", invert_pan) {
+        if ui::draw_toggle_button(
+            640.0, 15.0, 140.0, 35.0, "Pan Drag", "INVERTED", "REGULAR", invert_pan,
+        ) {
             invert_pan = !invert_pan;
+        }
+
+        if ui::draw_toggle_button(
+            640.0,
+            55.0,
+            140.0,
+            35.0,
+            "Show Leaves",
+            "TRUE",
+            "FALSE",
+            show_leaves,
+        ) {
+            show_leaves = !show_leaves;
         }
 
         next_frame().await;

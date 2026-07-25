@@ -87,6 +87,12 @@ impl TreeSimulation {
 
                         new_branches.push(left_child);
                         new_branches.push(right_child);
+                    } else {
+                        // Terminal branches (smallest branch threshold reached)
+                        // also need to transition out of Growing state!
+                        branch.state = BranchState::FullyGrown {
+                            child_indices: Vec::new(),
+                        };
                     }
                 }
             }
@@ -99,6 +105,13 @@ impl TreeSimulation {
         // PASS 3: Position Propagation Phase
         // -----------------------------------------------------------------
         self.propagate_positions();
+    }
+
+    pub fn is_finished(&self) -> bool {
+        // `matches!` checks the variant type and ignores `child_indices`
+        self.branches
+            .iter()
+            .all(|branch| matches!(branch.state, BranchState::FullyGrown { .. }))
     }
 
     pub fn reset(&mut self, trunk_start: Vector2D, trunk_length: f32, trunk_thickness: f32) {

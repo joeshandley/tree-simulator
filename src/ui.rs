@@ -8,6 +8,8 @@ pub fn draw_toggle_button(
     width: f32,
     height: f32,
     label: &str,
+    on_text: &str,
+    off_text: &str,
     is_on: bool,
 ) -> bool {
     let (mx, my) = mouse_position();
@@ -30,7 +32,7 @@ pub fn draw_toggle_button(
     draw_rectangle(x, y, width, height, bg_color);
     draw_rectangle_lines(x, y, width, height, 2.0, DARKGRAY);
 
-    let display_text = format!("{}: {}", label, if is_on { "INVERTED" } else { "REGULAR" });
+    let display_text = format!("{}: {}", label, if is_on { on_text } else { off_text });
     draw_text(&display_text, x + 10.0, y + height / 2.0 + 5.0, 14.0, WHITE);
 
     is_hovered && is_mouse_button_pressed(MouseButton::Left)
