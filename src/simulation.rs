@@ -132,6 +132,11 @@ impl TreeSimulation {
                         child_indices: Vec::new(),
                     };
                 }
+            } else if is_blocked {
+                // The branch is physically blocked and permanently stunted.
+                branch.state = BranchState::FullyGrown {
+                    child_indices: Vec::new(),
+                };
             }
         }
 

@@ -111,10 +111,10 @@ async fn main() {
                 if let BranchState::FullyGrown { ref child_indices } = branch.state {
                     if child_indices.is_empty() {
                         let end = branch.end_point();
-                        let rx = branch.thickness * 5.0;
-                        let ry = branch.thickness * 3.0;
+                        let rx = 10.0;
+                        let ry = 6.0;
                         let angle = branch.angle.to_degrees();
-                        let outline_thickness = 0.2;
+                        let outline_thickness = 0.5;
 
                         draw_ellipse(
                             end.x,
