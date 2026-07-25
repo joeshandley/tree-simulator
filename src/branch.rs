@@ -15,14 +15,19 @@ pub struct Branch {
     pub thickness: f32,
     pub growth_rate: f32,
     pub state: BranchState,
-
-    // Sensitivity traits for biological variety
+    pub parent_index: Option<usize>,
     pub gravitropism_weight: f32, // Sensitivity to gravity (upward pull)
     pub phototropism_weight: f32, // Sensitivity to light direction
 }
 
 impl Branch {
-    pub fn new(start_point: Vector2D, angle: f32, max_length: f32, thickness: f32) -> Self {
+    pub fn new(
+        start_point: Vector2D,
+        angle: f32,
+        max_length: f32,
+        thickness: f32,
+        parent_index: Option<usize>,
+    ) -> Self {
         Branch {
             start_point,
             angle,
@@ -31,6 +36,7 @@ impl Branch {
             thickness,
             growth_rate: 50.0,
             state: BranchState::Growing,
+            parent_index,
             gravitropism_weight: 1.0,
             phototropism_weight: 0.5, // Phototropism often dominates young tips
         }

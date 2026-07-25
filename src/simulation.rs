@@ -5,95 +5,132 @@ pub struct TreeSimulation {
     pub branches: Vec<Branch>,
     pub branch_angle_spread: f32, // Angle separation for child branches (radians)
     pub length_decay: f32,        // Multiplier for child branch max_length (e.g., 0.7)
-    pub global_sun_direction: Vector2D, // E.g., Vector2D { x: 0.2, y: -1.0 } pointing up and slightly right
+    pub sun_azimuth: f32,         // Angle pointing TO the sun in radians
 }
 
 impl TreeSimulation {
     pub fn new(trunk_start: Vector2D, trunk_length: f32, trunk_thickness: f32) -> Self {
-        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness);
+        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
 
         TreeSimulation {
             branches: vec![trunk],
-            branch_angle_spread: 0.5,
+            branch_angle_spread: 0.7,
             length_decay: 0.75,
-            global_sun_direction: Vector2D { x: 0.0, y: -1.0 },
-            // global_sun_direction: Vector2D { x: 0.1, y: -1.0 }, // Overhead sun with slight tilt
+            sun_azimuth: ANGLE_UP,
         }
     }
 
-    /// Evaluates environmental conditions at a given point in space.
-    /// In a simple setup, this returns global sun. In an advanced setup,
-    /// this samples a light grid to account for self-shading.
-    fn sample_light_at(&self, position: Vector2D) -> (Vector2D, f32) {
-        // Placeholder for future light-grid/shadow calculation:
-        // Returns (Light Direction Vector, Light Intensity [0.0 - 1.0])
-        (self.global_sun_direction, 1.0)
-    }
-
     pub fn update(&mut self, delta_time: f32) {
-        let initial_count = self.branches.len();
-
-        // -----------------------------------------------------------------
-        // PASS 1: Read-Only Environmental Phase (Immutable borrow of `self`)
-        // -----------------------------------------------------------------
-        let light_data: Vec<(Vector2D, f32)> = (0..initial_count)
-            .map(|i| {
-                if let BranchState::Growing = self.branches[i].state {
-                    self.sample_light_at(self.branches[i].end_point())
-                } else {
-                    (Vector2D { x: 0.0, y: 0.0 }, 0.0)
-                }
-            })
-            .collect();
-
-        // -----------------------------------------------------------------
-        // PASS 2: Physics Update & Forking Phase (Mutable borrow of `self.branches`)
-        // -----------------------------------------------------------------
+        // Convert the azimuth angle into a normalized directional vector
+        let global_light_dir = Vector2D {
+            x: self.sun_azimuth.cos(),
+            y: self.sun_azimuth.sin(),
+        };
+        let num_branches = self.branches.len();
         let mut new_branches = Vec::new();
 
-        // Pass 1: Physical Updates & Spawning Children
-        for index in 0..initial_count {
-            let branch = &mut self.branches[index];
+        for i in 0..num_branches {
+            // Only growing branches need collision & light sampling
+            if !matches!(self.branches[i].state, BranchState::Growing) {
+                continue;
+            }
 
-            if let BranchState::Growing = branch.state {
-                // Apply light context calculated in Pass 1
-                let (light_dir, light_intensity) = light_data[index];
-                branch.update_physics(delta_time, light_dir, light_intensity);
+            let tip = self.branches[i].end_point();
+            let mut shadow_count = 0;
+            let mut is_blocked = false;
 
-                // Handle split logic when fully grown
-                if branch.current_length >= branch.max_length {
-                    branch.current_length = branch.max_length; // Clamp
+            let parent_i = self.branches[i].parent_index;
 
-                    let end_pos = branch.end_point();
-                    let child_length = branch.max_length * self.length_decay;
-                    let child_thickness = branch.thickness * 0.75;
+            'inner: for j in 0..num_branches {
+                // Skip checking against self
+                if i == j {
+                    continue;
+                }
 
-                    // Asymmetric spread: Primary leader shoot stays closer to parent angle, side shoot branches off
-                    let left_angle = branch.angle - (self.branch_angle_spread * 0.7);
-                    let right_angle = branch.angle + (self.branch_angle_spread * 1.1);
+                let parent_j = self.branches[j].parent_index;
 
-                    if child_length > 5.0 {
-                        let left_child =
-                            Branch::new(end_pos, left_angle, child_length, child_thickness);
-                        let right_child =
-                            Branch::new(end_pos, right_angle, child_length, child_thickness);
+                // Skip direct parent, direct children, and siblings
+                let is_parent = parent_i == Some(j);
+                let is_child = parent_j == Some(i);
+                let is_sibling = parent_i.is_some() && parent_i == parent_j;
 
-                        let left_idx = initial_count + new_branches.len();
-                        let right_idx = left_idx + 1;
+                if is_parent || is_child || is_sibling {
+                    continue 'inner;
+                }
 
-                        branch.state = BranchState::FullyGrown {
-                            child_indices: vec![left_idx, right_idx],
-                        };
+                // Skip branches that just spawned and have no physical length
+                if self.branches[j].current_length <= f32::EPSILON {
+                    continue 'inner;
+                }
 
-                        new_branches.push(left_child);
-                        new_branches.push(right_child);
-                    } else {
-                        // Terminal branches (smallest branch threshold reached)
-                        // also need to transition out of Growing state!
-                        branch.state = BranchState::FullyGrown {
-                            child_indices: Vec::new(),
-                        };
-                    }
+                let other_start = self.branches[j].start_point;
+                let other_end = self.branches[j].end_point();
+
+                // 1. Physical Collision Guard:
+                // Stop growth if the tip comes within safety clearance of another branch
+                let dist = tip.distance_to_segment(other_start, other_end);
+                let min_clearance =
+                    (self.branches[i].thickness + self.branches[j].thickness) * 0.75;
+
+                if dist < min_clearance {
+                    is_blocked = true;
+                    break;
+                }
+
+                // 2. Canopy Occlusion (Raycast):
+                // Check if another branch is directly above this tip blocking skylight
+                if Vector2D::ray_intersects_segment(tip, global_light_dir, other_start, other_end) {
+                    shadow_count += 1;
+                }
+            }
+
+            // Calculate effective light intensity:
+            // 0.0 if blocked physically, exponentially reduced by overhead canopy layers
+            let local_light_intensity = if is_blocked {
+                0.0
+            } else {
+                0.85_f32.powi(shadow_count)
+            };
+
+            // Now create a mutable version of the branch of index i
+            let branch = &mut self.branches[i];
+
+            // Apply physics with the dynamically calculated local light
+            branch.update_physics(delta_time, global_light_dir, local_light_intensity);
+
+            // Handle split logic when fully grown
+            if branch.current_length >= branch.max_length {
+                branch.current_length = branch.max_length; // Clamp
+
+                let end_pos = branch.end_point();
+                let child_length = branch.max_length * self.length_decay;
+                let child_thickness = branch.thickness * 0.75;
+
+                // Asymmetric spread: Primary leader shoot stays closer to parent angle, side shoot branches off
+                let left_angle = branch.angle - self.branch_angle_spread;
+                let right_angle = branch.angle + self.branch_angle_spread;
+
+                if child_length > 5.0 {
+                    let left_child =
+                        Branch::new(end_pos, left_angle, child_length, child_thickness, Some(i));
+                    let right_child =
+                        Branch::new(end_pos, right_angle, child_length, child_thickness, Some(i));
+
+                    let left_idx = num_branches + new_branches.len();
+                    let right_idx = left_idx + 1;
+
+                    branch.state = BranchState::FullyGrown {
+                        child_indices: vec![left_idx, right_idx],
+                    };
+
+                    new_branches.push(left_child);
+                    new_branches.push(right_child);
+                } else {
+                    // Terminal branches (smallest branch threshold reached)
+                    // also need to transition out of Growing state!
+                    branch.state = BranchState::FullyGrown {
+                        child_indices: Vec::new(),
+                    };
                 }
             }
         }
@@ -115,7 +152,7 @@ impl TreeSimulation {
     }
 
     pub fn reset(&mut self, trunk_start: Vector2D, trunk_length: f32, trunk_thickness: f32) {
-        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness);
+        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
         self.branches = vec![trunk];
     }
 
