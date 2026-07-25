@@ -25,7 +25,7 @@ async fn main() {
     let default_camera_target = vec2(SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0);
 
     let trunk_length = 100.0;
-    let trunk_thickness = 12.0;
+    let trunk_thickness = 20.0;
 
     let mut sim = TreeSimulation::new(trunk_start, trunk_length, trunk_thickness);
 
@@ -34,51 +34,20 @@ async fn main() {
     let mut camera_target = default_camera_target;
     let mut zoom_level: f32 = 1.0;
     let mut invert_pan = true;
-
     let mut show_leaves = true;
+    let mut sim_speed: f32 = 1.0;
+    let mut is_paused = false;
     const LEAF_GROW_DURATION: f32 = 1.0; // 1.0 second growth animation
 
     loop {
-        let delta_time = get_frame_time();
+        let raw_delta_time = get_frame_time();
 
-        // --- INPUT HANDLING ---
-
-        // Reset Simulation
-        if is_key_pressed(KeyCode::R) {
-            sim.reset(trunk_start, trunk_length, trunk_thickness);
-        }
-
-        // Keyboard Zoom Shortcuts (+ / - or = / -)
-        if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
-            zoom_level = (zoom_level * 1.2).clamp(0.2, 10.0);
-        }
-        if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
-            zoom_level = (zoom_level / 1.2).clamp(0.2, 10.0);
-        }
-
-        // Scrolling -> Zoom In / Zoom Out
-        let (_, scroll_y) = mouse_wheel();
-        if scroll_y != 0.0 {
-            // Scroll UP zooms IN, Scroll DOWN zooms OUT
-            let zoom_factor = if scroll_y > 0.0 { 1.08 } else { 1.0 / 1.08 };
-            zoom_level = (zoom_level * zoom_factor).clamp(0.2, 10.0);
-        }
-
-        // Mouse / Trackpad Dragging for Panning (With inversion toggle)
-        if is_mouse_button_down(MouseButton::Left) {
-            let mouse_delta = mouse_delta_position();
-            let sensitivity = (screen_width() / 2.0) / zoom_level;
-            let direction_multiplier = if invert_pan { 1.0 } else { -1.0 };
-
-            camera_target.x += mouse_delta.x * sensitivity * direction_multiplier;
-            camera_target.y += mouse_delta.y * sensitivity * direction_multiplier;
-        }
-
-        // Reset View Center
-        if is_key_pressed(KeyCode::C) {
-            camera_target = vec2(400.0, 300.0);
-            zoom_level = 1.0;
-        }
+        // --- APPLY SPEED MULTIPLIER ---
+        let delta_time = if is_paused {
+            0.0
+        } else {
+            raw_delta_time * sim_speed
+        };
 
         // --- UPDATE SIMULATION ---
         sim.update(delta_time);
@@ -101,7 +70,7 @@ async fn main() {
             }
         }
 
-        // --- RENDER LAYER ---
+        // --- DRAW FIXED ELEMENTS ---
         clear_background(SKYBLUE);
 
         // Setup Camera
@@ -116,6 +85,16 @@ async fn main() {
 
         // Activate world space camera
         set_camera(&camera);
+
+        // --- DRAW NON-FIXED ELEMENTS ---
+        // Draw ground
+        draw_rectangle(
+            -10000.0,      // Huge left offset for panning
+            trunk_start.y, // Starts at the trunk's base
+            20000.0,       // Huge width
+            10000.0,       // Huge height downward
+            Color::from_rgba(120, 200, 80, 255),
+        );
 
         // Draw branches
         for branch in &sim.branches {
@@ -166,7 +145,7 @@ async fn main() {
 
         // --- UI OVERLAY ---
         draw_text(
-            "Controls: [Scroll / +/-] Zoom | [Click + Drag] Pan | [R] Reset Tree | [C] Center View",
+            "Controls: [Scroll / +/-] Zoom | [Space] Play/Pause | [Click + Drag] Pan | [R] Reset Tree | [C] Center View",
             10.0,
             25.0,
             16.0,
@@ -186,14 +165,14 @@ async fn main() {
 
         // Call our function cleanly via `ui::draw_toggle_button`
         if ui::draw_toggle_button(
-            640.0, 15.0, 140.0, 35.0, "Pan Drag", "INVERTED", "REGULAR", invert_pan,
+            640.0, 40.0, 140.0, 35.0, "Pan Drag", "INVERTED", "REGULAR", invert_pan,
         ) {
             invert_pan = !invert_pan;
         }
 
         if ui::draw_toggle_button(
             640.0,
-            55.0,
+            80.0,
             140.0,
             35.0,
             "Show Leaves",
@@ -202,6 +181,57 @@ async fn main() {
             show_leaves,
         ) {
             show_leaves = !show_leaves;
+        }
+
+        let is_slider_dragging =
+            ui::draw_slider(640.0, 120.0, 140.0, 35.0, "Speed", &mut sim_speed, 0.1, 5.0);
+
+        if ui::draw_toggle_button(600.0, 120.0, 35.0, 35.0, "", ">>", "||", is_paused) {
+            is_paused = !is_paused;
+        }
+
+        // --- INPUT HANDLING ---
+
+        // Reset Simulation
+        if is_key_pressed(KeyCode::R) {
+            sim.reset(trunk_start, trunk_length, trunk_thickness);
+        }
+
+        // Pause Simulation
+        if is_key_pressed(KeyCode::Space) {
+            is_paused = !is_paused;
+        }
+
+        // Keyboard Zoom Shortcuts (+ / - or = / -)
+        if is_key_pressed(KeyCode::Equal) || is_key_pressed(KeyCode::KpAdd) {
+            zoom_level = (zoom_level * 1.2).clamp(0.2, 10.0);
+        }
+        if is_key_pressed(KeyCode::Minus) || is_key_pressed(KeyCode::KpSubtract) {
+            zoom_level = (zoom_level / 1.2).clamp(0.2, 10.0);
+        }
+
+        // Scrolling -> Zoom In / Zoom Out
+        let (_, scroll_y) = mouse_wheel();
+        if scroll_y != 0.0 {
+            // Scroll UP zooms IN, Scroll DOWN zooms OUT
+            let zoom_factor = if scroll_y > 0.0 { 1.08 } else { 1.0 / 1.08 };
+            zoom_level = (zoom_level * zoom_factor).clamp(0.2, 10.0);
+        }
+
+        // Mouse / Trackpad Dragging for Panning (With inversion toggle)
+        if is_mouse_button_down(MouseButton::Left) && !is_slider_dragging {
+            let mouse_delta = mouse_delta_position();
+            let sensitivity = (screen_width() / 2.0) / zoom_level;
+            let direction_multiplier = if invert_pan { 1.0 } else { -1.0 };
+
+            camera_target.x += mouse_delta.x * sensitivity * direction_multiplier;
+            camera_target.y += mouse_delta.y * sensitivity * direction_multiplier;
+        }
+
+        // Reset View Center
+        if is_key_pressed(KeyCode::C) {
+            camera_target = vec2(400.0, 300.0);
+            zoom_level = 1.0;
         }
 
         next_frame().await;

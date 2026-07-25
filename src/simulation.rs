@@ -14,7 +14,7 @@ impl TreeSimulation {
 
         TreeSimulation {
             branches: vec![trunk],
-            branch_angle_spread: 0.7,
+            branch_angle_spread: 40.0_f32.to_radians(),
             length_decay: 0.75,
             sun_azimuth: ANGLE_UP,
         }
