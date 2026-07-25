@@ -35,7 +35,9 @@ async fn main() {
     let mut zoom_level: f32 = 1.0;
     let mut invert_pan = true;
 
-    let mut show_leaves = false;
+    let mut show_leaves = true;
+    let mut leaf_timer: f32 = 0.0;
+    const LEAF_GROW_DURATION: f32 = 1.0; // 1.0 second growth animation
 
     loop {
         let delta_time = get_frame_time();
@@ -45,6 +47,7 @@ async fn main() {
         // Reset Simulation
         if is_key_pressed(KeyCode::R) {
             sim.reset(trunk_start, trunk_length, trunk_thickness);
+            leaf_timer = 0.0;
         }
 
         // Keyboard Zoom Shortcuts (+ / - or = / -)
@@ -82,6 +85,14 @@ async fn main() {
         // --- UPDATE SIMULATION ---
         sim.update(delta_time);
 
+        // Update Leaf Growth Timer
+        if sim.is_finished() && show_leaves {
+            leaf_timer = (leaf_timer + delta_time).min(LEAF_GROW_DURATION);
+        } else if !show_leaves {
+            // Reset timer when toggled off
+            leaf_timer = 0.0;
+        }
+
         // --- RENDER LAYER ---
         clear_background(SKYBLUE);
 
@@ -106,26 +117,37 @@ async fn main() {
             draw_line(start.x, start.y, end.x, end.y, branch.thickness, DARKBROWN);
         }
 
-        if sim.is_finished() && show_leaves {
+        if sim.is_finished() && show_leaves && leaf_timer > 0.0 {
+            // Progress normalized between 0.0 and 1.0
+            let progress = (leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
+
+            // Quadratic Ease-Out: 1 - (1 - t)^2 for smooth popping effect
+            let scale = 1.0 - (1.0 - progress) * (1.0 - progress);
+
             for branch in &sim.branches {
                 if let BranchState::FullyGrown { ref child_indices } = branch.state {
                     if child_indices.is_empty() {
                         let end = branch.end_point();
-                        let rx = 10.0;
-                        let ry = 6.0;
+
+                        // Multiply final radius by animated scale
+                        let rx = 10.0 * scale;
+                        let ry = 6.0 * scale;
                         let angle = branch.angle.to_degrees();
-                        let outline_thickness = 0.5;
+                        let outline_thickness = rx / 20.0;
 
-                        draw_ellipse(
-                            end.x,
-                            end.y,
-                            rx + outline_thickness,
-                            ry + outline_thickness,
-                            angle,
-                            BLACK,
-                        );
+                        // Only render if scale is noticeably greater than zero
+                        if rx > 0.01 {
+                            draw_ellipse(
+                                end.x,
+                                end.y,
+                                rx + outline_thickness,
+                                ry + outline_thickness,
+                                angle,
+                                BLACK,
+                            );
 
-                        draw_ellipse(end.x, end.y, rx, ry, angle, DARKGREEN);
+                            draw_ellipse(end.x, end.y, rx, ry, angle, DARKGREEN);
+                        }
                     }
                 }
             }
