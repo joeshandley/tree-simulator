@@ -24,10 +24,9 @@ async fn main() {
     };
     let default_camera_target = vec2(SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0);
 
-    let trunk_length = 100.0;
     let trunk_thickness = 20.0;
 
-    let mut sim = TreeSimulation::new(trunk_start, trunk_length, trunk_thickness);
+    let mut sim = TreeSimulation::new(trunk_start, trunk_thickness);
 
     // Initialize Camera State
     // Target starts focused on the middle of the screen
@@ -54,19 +53,19 @@ async fn main() {
 
         // Update Leaf Growth Timers
         if show_leaves {
-            for branch in &mut sim.branches {
-                // If it is a terminal branch, grow its leaf
-                if let GrowthSectionState::FullyGrown { ref child_indices } = branch.state {
+            for section in &mut sim.growth_sections {
+                // If it is a terminal section, grow its leaf
+                if let GrowthSectionState::FullyGrown { ref child_indices } = section.state {
                     if child_indices.is_empty() {
-                        branch.leaf_timer =
-                            (branch.leaf_timer + delta_time).min(LEAF_GROW_DURATION);
+                        section.leaf_timer =
+                            (section.leaf_timer + delta_time).min(LEAF_GROW_DURATION);
                     }
                 }
             }
         } else {
             // Reset all timers if toggle is turned off
-            for branch in &mut sim.branches {
-                branch.leaf_timer = 0.0;
+            for section in &mut sim.growth_sections {
+                section.leaf_timer = 0.0;
             }
         }
 
@@ -97,29 +96,29 @@ async fn main() {
         );
 
         // Draw branches
-        for branch in &sim.branches {
-            let start = branch.start_point;
-            let end = branch.end_point();
-            draw_line(start.x, start.y, end.x, end.y, branch.thickness, DARKBROWN);
+        for section in &sim.growth_sections {
+            let start = section.start_point;
+            let end = section.end_point();
+            draw_line(start.x, start.y, end.x, end.y, section.thickness, DARKBROWN);
         }
 
         // Draw leaves
         if show_leaves {
-            for branch in &sim.branches {
-                if let GrowthSectionState::FullyGrown { ref child_indices } = branch.state {
-                    if child_indices.is_empty() && branch.leaf_timer > 0.0 {
+            for section in &sim.growth_sections {
+                if let GrowthSectionState::FullyGrown { ref child_indices } = section.state {
+                    if child_indices.is_empty() && section.leaf_timer > 0.0 {
                         // Progress normalized between 0.0 and 1.0
-                        let progress = (branch.leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
+                        let progress = (section.leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
 
                         // Quadratic Ease-Out: 1 - (1 - t)^2 for smooth popping effect
                         let scale = 1.0 - (1.0 - progress) * (1.0 - progress);
 
-                        let end = branch.end_point();
+                        let end = section.end_point();
 
                         // Multiply final radius by animated scale
                         let rx = 10.0 * scale;
                         let ry = 6.0 * scale;
-                        let angle = branch.angle.to_degrees();
+                        let angle = section.angle.to_degrees();
                         let outline_thickness = rx / 20.0;
 
                         // Only render if scale is noticeably greater than zero
@@ -153,8 +152,8 @@ async fn main() {
         );
         draw_text(
             &format!(
-                "Active Branches: {} | Zoom: {:.1}x",
-                sim.branches.len(),
+                "Number of Growth Sections: {} | Zoom: {:.1}x",
+                sim.growth_sections.len(),
                 zoom_level
             ),
             10.0,
@@ -194,7 +193,7 @@ async fn main() {
 
         // Reset Simulation
         if is_key_pressed(KeyCode::R) {
-            sim.reset(trunk_start, trunk_length, trunk_thickness);
+            sim.reset(trunk_start, trunk_thickness);
         }
 
         // Pause Simulation
