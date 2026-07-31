@@ -1,27 +1,27 @@
 use crate::vector::{ANGLE_UP, Vector2D};
 
 #[derive(Debug, Clone)]
-pub enum BranchState {
+pub enum GrowthSectionState {
     Growing,
     FullyGrown { child_indices: Vec<usize> },
 }
 
 #[derive(Debug, Clone)]
-pub struct Branch {
+pub struct GrowthSection {
     pub start_point: Vector2D,
     pub angle: f32,
     pub current_length: f32,
     pub max_length: f32,
     pub thickness: f32,
     pub growth_rate: f32,
-    pub state: BranchState,
+    pub state: GrowthSectionState,
     pub parent_index: Option<usize>,
     pub leaf_timer: f32,
     pub gravitropism_weight: f32, // Sensitivity to gravity (upward pull)
     pub phototropism_weight: f32, // Sensitivity to light direction
 }
 
-impl Branch {
+impl GrowthSection {
     pub fn new(
         start_point: Vector2D,
         angle: f32,
@@ -29,14 +29,14 @@ impl Branch {
         thickness: f32,
         parent_index: Option<usize>,
     ) -> Self {
-        Branch {
+        GrowthSection {
             start_point,
             angle,
             current_length: 0.0,
             max_length,
             thickness,
             growth_rate: 50.0,
-            state: BranchState::Growing,
+            state: GrowthSectionState::Growing,
             parent_index,
             leaf_timer: 0.0,
             gravitropism_weight: 1.0,
@@ -58,7 +58,7 @@ impl Branch {
         light_direction: Vector2D,
         light_intensity: f32,
     ) {
-        if let BranchState::Growing = self.state {
+        if let GrowthSectionState::Growing = self.state {
             // 1. Advance length (light intensity speeds up or slows down growth)
             let effective_growth_rate = self.growth_rate * light_intensity;
             self.current_length += effective_growth_rate * delta_time;

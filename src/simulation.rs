@@ -1,8 +1,8 @@
-use crate::branch::{Branch, BranchState};
+use crate::growth_section::{GrowthSection, GrowthSectionState};
 use crate::vector::{ANGLE_UP, Vector2D};
 
 pub struct TreeSimulation {
-    pub branches: Vec<Branch>,
+    pub branches: Vec<GrowthSection>,
     pub branch_angle_spread: f32, // Angle separation for child branches (radians)
     pub length_decay: f32,        // Multiplier for child branch max_length (e.g., 0.7)
     pub sun_azimuth: f32,         // Angle pointing TO the sun in radians
@@ -10,7 +10,7 @@ pub struct TreeSimulation {
 
 impl TreeSimulation {
     pub fn new(trunk_start: Vector2D, trunk_length: f32, trunk_thickness: f32) -> Self {
-        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
+        let trunk = GrowthSection::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
 
         TreeSimulation {
             branches: vec![trunk],
@@ -31,7 +31,7 @@ impl TreeSimulation {
 
         for i in 0..num_branches {
             // Only growing branches need collision & light sampling
-            if !matches!(self.branches[i].state, BranchState::Growing) {
+            if !matches!(self.branches[i].state, GrowthSectionState::Growing) {
                 continue;
             }
 
@@ -111,15 +111,25 @@ impl TreeSimulation {
                 let right_angle = branch.angle + self.branch_angle_spread;
 
                 if child_length > 5.0 {
-                    let left_child =
-                        Branch::new(end_pos, left_angle, child_length, child_thickness, Some(i));
-                    let right_child =
-                        Branch::new(end_pos, right_angle, child_length, child_thickness, Some(i));
+                    let left_child = GrowthSection::new(
+                        end_pos,
+                        left_angle,
+                        child_length,
+                        child_thickness,
+                        Some(i),
+                    );
+                    let right_child = GrowthSection::new(
+                        end_pos,
+                        right_angle,
+                        child_length,
+                        child_thickness,
+                        Some(i),
+                    );
 
                     let left_idx = num_branches + new_branches.len();
                     let right_idx = left_idx + 1;
 
-                    branch.state = BranchState::FullyGrown {
+                    branch.state = GrowthSectionState::FullyGrown {
                         child_indices: vec![left_idx, right_idx],
                     };
 
@@ -128,13 +138,13 @@ impl TreeSimulation {
                 } else {
                     // Terminal branches (smallest branch threshold reached)
                     // also need to transition out of Growing state!
-                    branch.state = BranchState::FullyGrown {
+                    branch.state = GrowthSectionState::FullyGrown {
                         child_indices: Vec::new(),
                     };
                 }
             } else if is_blocked {
                 // The branch is physically blocked and permanently stunted.
-                branch.state = BranchState::FullyGrown {
+                branch.state = GrowthSectionState::FullyGrown {
                     child_indices: Vec::new(),
                 };
             }
@@ -153,18 +163,20 @@ impl TreeSimulation {
         // `matches!` checks the variant type and ignores `child_indices`
         self.branches
             .iter()
-            .all(|branch| matches!(branch.state, BranchState::FullyGrown { .. }))
+            .all(|branch| matches!(branch.state, GrowthSectionState::FullyGrown { .. }))
     }
 
     pub fn reset(&mut self, trunk_start: Vector2D, trunk_length: f32, trunk_thickness: f32) {
-        let trunk = Branch::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
+        let trunk = GrowthSection::new(trunk_start, ANGLE_UP, trunk_length, trunk_thickness, None);
         self.branches = vec![trunk];
     }
 
     /// Ensures child branches remain attached to their parent's moving end points.
     fn propagate_positions(&mut self) {
         for i in 0..self.branches.len() {
-            if let BranchState::FullyGrown { ref child_indices } = self.branches[i].state.clone() {
+            if let GrowthSectionState::FullyGrown { ref child_indices } =
+                self.branches[i].state.clone()
+            {
                 let parent_end = self.branches[i].end_point();
                 for &child_idx in child_indices {
                     self.branches[child_idx].start_point = parent_end;

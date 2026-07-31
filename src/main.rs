@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use tree_simulator::{BranchState, TreeSimulation, Vector2D};
+use tree_simulator::{GrowthSectionState, TreeSimulation, Vector2D};
 
 mod ui;
 
@@ -56,7 +56,7 @@ async fn main() {
         if show_leaves {
             for branch in &mut sim.branches {
                 // If it is a terminal branch, grow its leaf
-                if let BranchState::FullyGrown { ref child_indices } = branch.state {
+                if let GrowthSectionState::FullyGrown { ref child_indices } = branch.state {
                     if child_indices.is_empty() {
                         branch.leaf_timer =
                             (branch.leaf_timer + delta_time).min(LEAF_GROW_DURATION);
@@ -106,7 +106,7 @@ async fn main() {
         // Draw leaves
         if show_leaves {
             for branch in &sim.branches {
-                if let BranchState::FullyGrown { ref child_indices } = branch.state {
+                if let GrowthSectionState::FullyGrown { ref child_indices } = branch.state {
                     if child_indices.is_empty() && branch.leaf_timer > 0.0 {
                         // Progress normalized between 0.0 and 1.0
                         let progress = (branch.leaf_timer / LEAF_GROW_DURATION).clamp(0.0, 1.0);
