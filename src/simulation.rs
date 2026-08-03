@@ -28,15 +28,39 @@ fn jittered_length(length: f32) -> f32 {
     length * (1.0 + rand::gen_range(-LENGTH_JITTER_FRACTION, LENGTH_JITTER_FRACTION))
 }
 
+/// How strongly a fork's leader-side coin flip is biased toward correcting
+/// the axis back toward vertical, vs. a pure 50/50 flip. 0.0 = unbiased
+/// (random walk); higher values self-correct faster but look less naturally
+/// random. Kept well short of 1.0 so the leader still visibly zigzags rather
+/// than snapping straight — real sympodial zigzag is statistical, not exact.
+const LEADER_CORRECTION_STRENGTH: f32 = 0.35;
+
 pub struct TreeSimulation {
     pub growth_sections: Vec<GrowthSection>,
     pub branch_angle_spread: f32, // Angle separation for child growth sections (radians)
     pub length_decay: f32,        // Multiplier for child section max_length
     pub thickness_decay: f32,     // Multiplier for child section thickness
-    pub sun_azimuth: f32,         // Angle pointing TO the sun in radians
-    pub internode_length: f32,    // Target length of each internode before it freezes
-    pub fork_interval: u32,       // Baseline # of internodes between forks along an axis
-    pub fork_jitter: u32,         // +/- range applied to fork_interval so forking isn't metronomic
+    /// Share of the fork's combined thickness decay given to the leader child,
+    /// vs. 1.0 - dominance_ratio for the lateral child (0.5 = symmetric, matching
+    /// the old fork behavior). Also shrinks the leader's angle deviation relative
+    /// to `branch_angle_spread` so it continues closer to the parent's trajectory
+    /// while the lateral branches off at the full spread — modeling sympodial
+    /// apical dominance (e.g. elm), where the bud best-connected to the old axis
+    /// wins the resource/vascular race and becomes the new leader.
+    pub dominance_ratio: f32,
+    /// How much of `dominance_ratio`'s asymmetry carries over to *length*
+    /// specifically (0.0 = length always splits symmetrically regardless of
+    /// dominance_ratio, 1.0 = length uses the same full asymmetry as thickness).
+    /// Length is what determines how many more generations a lateral can fork
+    /// before hitting `MIN_VIABLE_INTERNODE_LENGTH`, so applying the full
+    /// dominance_ratio to it compounds fast and starves laterals out after only
+    /// one or two generations — a visibly thick/straight leader doesn't need an
+    /// equally starved lateral length to read as dominant.
+    pub length_dominance_blend: f32,
+    pub sun_azimuth: f32,      // Angle pointing TO the sun in radians
+    pub internode_length: f32, // Target length of each internode before it freezes
+    pub fork_interval: u32,    // Baseline # of internodes between forks along an axis
+    pub fork_jitter: u32,      // +/- range applied to fork_interval so forking isn't metronomic
 }
 
 impl TreeSimulation {
@@ -52,13 +76,25 @@ impl TreeSimulation {
 
         TreeSimulation {
             growth_sections: vec![trunk],
-            branch_angle_spread: 25.0_f32.to_radians(),
-            length_decay: 0.7,
+            branch_angle_spread: 40.0_f32.to_radians(),
+            // Combined leader+lateral length budget per fork. Raised slightly from
+            // 0.7 so the leader (which keeps the larger share, see dominance_ratio)
+            // survives more fork generations before hitting
+            // MIN_VIABLE_INTERNODE_LENGTH — that floor is what was capping the
+            // whole tree's final size, since once the leader axis hits it the
+            // entire tree stops growing.
+            length_decay: 0.75,
             thickness_decay: 0.707, // approx 1/sqrt(2) (ref. Da Vinci - splits in two)
+            dominance_ratio: 0.6,   // Leader favored over lateral; 0.5 would be symmetric
+            length_dominance_blend: 0.5, // Length asymmetry softened relative to thickness/angle
             sun_azimuth: ANGLE_UP,
             internode_length,
-            fork_interval: 6,
-            fork_jitter: 2,
+            // Longer straight runs between forks add height/volume linearly
+            // (more continuation internodes per axis) rather than exponentially
+            // (more branch points), so this is a cheap way to make the overall
+            // tree bigger without a combinatorial blowup in section count.
+            fork_interval: 9,
+            fork_jitter: 3, // Keeps the same +/-33% relative jitter as before
         }
     }
 
@@ -186,41 +222,85 @@ impl TreeSimulation {
                 );
 
                 if fork_due {
-                    let child_length = section.max_length * self.length_decay;
-                    let child_thickness = section.thickness * self.thickness_decay;
+                    // Split the fork's combined decay budget asymmetrically: the
+                    // leader keeps most of it (longer, thicker, straighter), the
+                    // lateral gets the remainder (shorter, thinner, wider angle) —
+                    // see `dominance_ratio` doc comment for the biological basis.
+                    //
+                    // Length uses a softened ratio (see `length_dominance_blend`):
+                    // at the full dominance_ratio, the lateral's length shrinks so
+                    // fast across generations that it hits MIN_VIABLE_INTERNODE_LENGTH
+                    // after only one or two forks and can never build out a
+                    // sub-canopy. Thickness/angle keep the full ratio since those
+                    // don't compound the same way — a thinner, more-angled lateral
+                    // still reads as visually subordinate without being starved out.
+                    let length_ratio =
+                        0.5 + (self.dominance_ratio - 0.5) * self.length_dominance_blend;
+                    let leader_length = section.max_length * self.length_decay * 2.0 * length_ratio;
+                    let lateral_length =
+                        section.max_length * self.length_decay * 2.0 * (1.0 - length_ratio);
+                    let leader_thickness =
+                        section.thickness * self.thickness_decay * 2.0 * self.dominance_ratio;
+                    let lateral_thickness = section.thickness
+                        * self.thickness_decay
+                        * 2.0
+                        * (1.0 - self.dominance_ratio);
 
-                    // Asymmetric spread: Primary leader shoot stays closer to parent angle, side shoot branches off
-                    let left_angle = section.angle - self.branch_angle_spread;
-                    let right_angle = section.angle + self.branch_angle_spread;
-
-                    if child_length > MIN_VIABLE_INTERNODE_LENGTH {
-                        let left_child = GrowthSection::new(
-                            end_pos,
-                            left_angle,
-                            jittered_length(child_length),
-                            child_thickness,
-                            Some(i),
-                        );
-                        let right_child = GrowthSection::new(
-                            end_pos,
-                            right_angle,
-                            jittered_length(child_length),
-                            child_thickness,
-                            Some(i),
-                        );
-
-                        let left_idx = num_sections + new_sections.len();
-                        let right_idx = left_idx + 1;
-
-                        section.freeze(vec![left_idx, right_idx]);
-
-                        new_sections.push(left_child);
-                        new_sections.push(right_child);
+                    let leader_angle_offset =
+                        self.branch_angle_spread * (1.0 - self.dominance_ratio);
+                    // Bias which side the leader kinks toward correcting the axis
+                    // back toward vertical, instead of a pure coin flip. A thick,
+                    // low-flexibility leader (see `dominance_ratio`) barely bends
+                    // via gravitropism before it freezes, so an unbiased flip is a
+                    // true random walk in heading that never self-corrects and
+                    // compounds into a wandering, snake-like trunk over many forks.
+                    // Reuses gravitropism's own signed sin() convention (see
+                    // `update_physics`): positive means increasing angle is the
+                    // corrective direction, so it lowers the odds of the "left"
+                    // (angle-decreasing) option in that case, and vice versa.
+                    let restoring_direction = (ANGLE_UP - section.angle).sin();
+                    let leader_on_left_probability =
+                        (0.5 - restoring_direction * LEADER_CORRECTION_STRENGTH).clamp(0.1, 0.9);
+                    let leader_on_left = rand::gen_range(0.0, 1.0) < leader_on_left_probability;
+                    let (leader_angle, lateral_angle) = if leader_on_left {
+                        (
+                            section.angle - leader_angle_offset,
+                            section.angle + self.branch_angle_spread,
+                        )
                     } else {
-                        // Terminal branches (smallest section threshold reached)
-                        // also need to transition out of Growing state!
-                        section.freeze(Vec::new());
+                        (
+                            section.angle + leader_angle_offset,
+                            section.angle - self.branch_angle_spread,
+                        )
+                    };
+
+                    let mut child_indices = Vec::new();
+
+                    if leader_length > MIN_VIABLE_INTERNODE_LENGTH {
+                        child_indices.push(num_sections + new_sections.len());
+                        new_sections.push(GrowthSection::new(
+                            end_pos,
+                            leader_angle,
+                            jittered_length(leader_length),
+                            leader_thickness,
+                            Some(i),
+                        ));
                     }
+                    if lateral_length > MIN_VIABLE_INTERNODE_LENGTH {
+                        child_indices.push(num_sections + new_sections.len());
+                        new_sections.push(GrowthSection::new(
+                            end_pos,
+                            lateral_angle,
+                            jittered_length(lateral_length),
+                            lateral_thickness,
+                            Some(i),
+                        ));
+                    }
+
+                    // Both may fail the viability floor (rare at dominance_ratio
+                    // extremes) — freezing with an empty child list terminates
+                    // this axis for good, same as the old symmetric behavior.
+                    section.freeze(child_indices);
                 } else {
                     // Continuation: same angle/thickness/target length, no decay applied.
                     let mut child = GrowthSection::new(
