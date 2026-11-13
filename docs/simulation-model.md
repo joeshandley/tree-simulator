@@ -22,7 +22,7 @@ The tree is a list of **growth sections** (internodes): short straight segments,
    - **Collision**: if the tip is within `(own thickness + other thickness) × thickness_decay` of another segment, it's blocked.
    - **Shade**: cast a ray from the tip towards the sun; count segments it crosses.
 2. **Light intensity** = 0 if blocked, else `0.85 ^ shade_count`.
-3. **Grow**: length increases by `growth_rate × light × Δt` (`growth_rate` = 50).
+3. **Grow**: length increases by `growth_rate × light × Δt` (`growth_rate` = 200).
 4. **Bend** (tropism):
    - gravitropism torque = `sin(UP − angle) × gravitropism_weight` (1.0)
    - phototropism torque = `sin(light angle − angle) × phototropism_weight × light` (0.5)

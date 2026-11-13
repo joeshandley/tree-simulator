@@ -42,7 +42,7 @@ impl GrowthSection {
             current_length: 0.0,
             max_length,
             thickness,
-            growth_rate: 50.0,
+            growth_rate: 200.0, // Units per second at full light
             state: GrowthSectionState::Growing,
             parent_index,
             leaf_timer: 0.0,
