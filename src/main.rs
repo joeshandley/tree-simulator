@@ -37,6 +37,9 @@ async fn main() {
     let mut sim_speed: f32 = 1.0;
     let mut is_paused = false;
     const LEAF_GROW_DURATION: f32 = 1.0; // 1.0 second growth animation
+    // Sim-time per real second at the slider's 1x. Raised from an implicit 1.0 because the old 5x
+    // cap still felt slow; keeps the slider labels while running every setting 4x faster.
+    const SPEED_SCALE: f32 = 4.0;
 
     loop {
         let raw_delta_time = get_frame_time();
@@ -45,7 +48,7 @@ async fn main() {
         let delta_time = if is_paused {
             0.0
         } else {
-            raw_delta_time * sim_speed
+            raw_delta_time * sim_speed * SPEED_SCALE
         };
 
         // --- UPDATE SIMULATION ---
