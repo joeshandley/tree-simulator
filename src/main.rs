@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use tree_simulator::params::HOURS_PER_YEAR;
 use tree_simulator::simulation::{SIM_DT, plan_steps};
 use tree_simulator::{GrowthSectionState, TreeSimulation, Vector2D};
 
@@ -7,6 +8,10 @@ mod ui;
 // Default screen dimensions
 const SCREEN_WIDTH: f32 = 800.0;
 const SCREEN_HEIGHT: f32 = 600.0;
+
+/// Screen pixels per simulated metre at zoom 1×. The simulation never sees
+/// pixels; only drawing and camera input convert (plan 0003, D14).
+const PX_PER_M: f32 = 200.0;
 
 /// A fresh seed from the clock, so each new tree differs unless regrown on purpose.
 fn new_seed() -> u64 {
@@ -27,15 +32,12 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    let trunk_start = Vector2D {
-        x: SCREEN_WIDTH / 2.0,
-        y: SCREEN_HEIGHT - 50.0,
-    };
-    let default_camera_target = vec2(SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0);
+    // World coordinates are metres, with the trunk base at the origin (+Y down).
+    let trunk_start = Vector2D { x: 0.0, y: 0.0 };
+    // Ground sits 50 px above the bottom edge at zoom 1×.
+    let default_camera_target = vec2(0.0, -(SCREEN_HEIGHT / 2.0 - 50.0) / PX_PER_M);
 
-    let trunk_thickness = 20.0;
-
-    let mut sim = TreeSimulation::new(trunk_start, trunk_thickness, new_seed());
+    let mut sim = TreeSimulation::new(trunk_start, new_seed());
     let mut sim_accumulator: f32 = 0.0;
 
     // Initialize Camera State
@@ -46,10 +48,10 @@ async fn main() {
     let mut show_leaves = true;
     let mut sim_speed: f32 = 1.0;
     let mut is_paused = false;
-    const LEAF_GROW_DURATION: f32 = 1.0; // 1.0 second growth animation
-    // Sim-time per real second at the slider's 1x. Raised from an implicit 1.0 because the old 5x
-    // cap still felt slow; keeps the slider labels while running every setting 4x faster.
-    const SPEED_SCALE: f32 = 4.0;
+    // Leaves unfold over a simulated week.
+    const LEAF_GROW_DURATION: f32 = 7.0 * 24.0;
+    // Simulated hours per real second at the slider's 1×: about a year per 30 s (plan 0003, D18).
+    const SPEED_SCALE: f32 = 300.0;
 
     loop {
         let raw_delta_time = get_frame_time();
@@ -86,8 +88,10 @@ async fn main() {
         clear_background(SKYBLUE);
 
         // Setup Camera
-        let aspect_ratio_correction =
-            vec2(1.0 / (screen_width() / 2.0), 1.0 / (screen_height() / 2.0));
+        let aspect_ratio_correction = vec2(
+            PX_PER_M / (screen_width() / 2.0),
+            PX_PER_M / (screen_height() / 2.0),
+        );
 
         let camera = Camera2D {
             target: camera_target,
@@ -101,10 +105,10 @@ async fn main() {
         // --- DRAW NON-FIXED ELEMENTS ---
         // Draw ground
         draw_rectangle(
-            -10000.0,      // Huge left offset for panning
+            -1000.0,       // Far left offset for panning (m)
             trunk_start.y, // Starts at the trunk's base
-            20000.0,       // Huge width
-            10000.0,       // Huge height downward
+            2000.0,        // Wide enough for any pan (m)
+            1000.0,        // Deep enough downward (m)
             Color::from_rgba(120, 200, 80, 255),
         );
 
@@ -128,14 +132,14 @@ async fn main() {
 
                         let end = section.end_point();
 
-                        // Multiply final radius by animated scale
-                        let rx = 10.0 * scale;
-                        let ry = 6.0 * scale;
+                        // Ellipse radii in metres, scaled by the unfolding animation
+                        let rx = sim.params.leaf_length / 2.0 * scale;
+                        let ry = sim.params.leaf_width / 2.0 * scale;
                         let angle = section.angle.to_degrees();
                         let outline_thickness = rx / 20.0;
 
                         // Only render if scale is noticeably greater than zero
-                        if rx > 0.01 {
+                        if rx > 0.0001 {
                             draw_ellipse(
                                 end.x,
                                 end.y,
@@ -165,7 +169,9 @@ async fn main() {
         );
         draw_text(
             &format!(
-                "Number of Growth Sections: {} | Zoom: {:.1}x | Seed: {}",
+                "Age: {} y {} d | Sections: {} | Zoom: {:.1}x | Seed: {}",
+                (sim.hours as f32 / HOURS_PER_YEAR) as u32,
+                ((sim.hours as f32 % HOURS_PER_YEAR) / 24.0) as u32,
                 sim.growth_sections.len(),
                 zoom_level,
                 sim.seed
@@ -210,7 +216,7 @@ async fn main() {
         if is_key_pressed(KeyCode::R) {
             let shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
             let seed = if shift { sim.seed } else { new_seed() };
-            sim.reset(trunk_start, trunk_thickness, seed);
+            sim.reset(trunk_start, seed);
             sim_accumulator = 0.0;
         }
 
@@ -238,7 +244,7 @@ async fn main() {
         // Mouse / Trackpad Dragging for Panning (With inversion toggle)
         if is_mouse_button_down(MouseButton::Left) && !is_slider_dragging {
             let mouse_delta = mouse_delta_position();
-            let sensitivity = (screen_width() / 2.0) / zoom_level;
+            let sensitivity = (screen_width() / 2.0) / zoom_level / PX_PER_M;
             let direction_multiplier = if invert_pan { 1.0 } else { -1.0 };
 
             camera_target.x += mouse_delta.x * sensitivity * direction_multiplier;
@@ -247,7 +253,7 @@ async fn main() {
 
         // Reset View Center
         if is_key_pressed(KeyCode::C) {
-            camera_target = vec2(400.0, 300.0);
+            camera_target = default_camera_target;
             zoom_level = 1.0;
         }
 

@@ -9,8 +9,8 @@ use std::time::Instant;
 use tree_simulator::metrics::{TreeMetrics, measure};
 use tree_simulator::{TreeSimulation, Vector2D};
 
-const MAX_STEPS: u32 = 20_000;
-const TRUNK_THICKNESS: f32 = 20.0; // matches main.rs
+/// Simulated hours before a run is cut off (about 25 years).
+const MAX_STEPS: u32 = 220_000;
 
 struct Run {
     metrics: TreeMetrics,
@@ -21,7 +21,7 @@ struct Run {
 }
 
 fn grow(seed: u64) -> Run {
-    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), TRUNK_THICKNESS, seed);
+    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), seed);
     let started = Instant::now();
     let (mut steps, mut slowest) = (0, 0.0_f64);
     while !sim.is_finished() && steps < MAX_STEPS {
@@ -74,11 +74,11 @@ fn main() {
     let mut table = vec![
         "| Metric | Mean | Min | Max |".to_string(),
         "|---|---|---|---|".to_string(),
-        row("Steps to finish", &col(&|r| Some(r.steps as f64)), 0),
+        row("Years to finish", &col(&|r| Some(r.steps as f64 / 8_760.0)), 1),
         row("Sections", &col(&|r| Some(r.metrics.sections as f64)), 0),
         row("Tips", &col(&|r| Some(r.metrics.tips as f64)), 0),
-        row("Height", &col(&|r| Some(r.metrics.height as f64)), 1),
-        row("Crown width", &col(&|r| Some(r.metrics.crown_width as f64)), 1),
+        row("Height (m)", &col(&|r| Some(r.metrics.height as f64)), 2),
+        row("Crown width (m)", &col(&|r| Some(r.metrics.crown_width as f64)), 2),
         row("Fork angle (°)", &col(&|r| r.metrics.mean_fork_angle_deg.map(f64::from)), 1),
         row("Leonardo ratio", &col(&|r| r.metrics.mean_leonardo_ratio.map(f64::from)), 3),
         row("Time per step (µs)", &col(&|r| Some(r.micros_per_step)), 0),

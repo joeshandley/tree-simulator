@@ -3,7 +3,7 @@
 use tree_simulator::{GrowthSectionState, TreeSimulation, Vector2D};
 
 fn grow(seed: u64, steps: usize) -> TreeSimulation {
-    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), 20.0, seed);
+    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), seed);
     for _ in 0..steps {
         sim.step();
     }
@@ -69,8 +69,8 @@ fn assert_frozen_sections_never_change(seed: u64, first: usize, more: usize) {
 #[test]
 fn arena_invariants_hold_mid_growth() {
     for seed in 1..=4 {
-        assert_links_valid(&grow(seed, 600), seed);
-        assert_frozen_sections_never_change(seed, 300, 300);
+        assert_links_valid(&grow(seed, 18_000), seed);
+        assert_frozen_sections_never_change(seed, 9_000, 9_000);
     }
 }
 
@@ -85,7 +85,7 @@ fn arena_invariants_hold_to_finish() {
         while !sim.is_finished() {
             sim.step();
             steps += 1;
-            assert!(steps <= 20_000, "seed {seed}: unfinished after 20,000 steps");
+            assert!(steps <= 220_000, "seed {seed}: unfinished after 220,000 steps");
         }
         assert_links_valid(&sim, seed);
     }

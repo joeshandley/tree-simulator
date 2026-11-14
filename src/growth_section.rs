@@ -1,3 +1,4 @@
+use crate::params::GrowthParams;
 use crate::vector::{ANGLE_UP, Vector2D};
 
 #[derive(Debug, Clone)]
@@ -13,12 +14,9 @@ pub struct GrowthSection {
     pub current_length: f32,
     pub max_length: f32,
     pub thickness: f32,
-    pub growth_rate: f32,
     pub state: GrowthSectionState,
     pub parent_index: Option<usize>,
     pub leaf_timer: f32,
-    pub gravitropism_weight: f32, // Sensitivity to gravity (upward pull)
-    pub phototropism_weight: f32, // Sensitivity to light direction
     /// Authoritative end point once `state` is `FullyGrown`. Frozen wood never
     /// moves again, so callers should rely on `end_point()` rather than reading
     /// this field directly.
@@ -42,12 +40,9 @@ impl GrowthSection {
             current_length: 0.0,
             max_length,
             thickness,
-            growth_rate: 50.0,
             state: GrowthSectionState::Growing,
             parent_index,
             leaf_timer: 0.0,
-            gravitropism_weight: 1.0,
-            phototropism_weight: 0.5, // Phototropism often dominates young tips
             cached_end_point: start_point,
             internodes_since_fork: 0,
         }
@@ -80,33 +75,32 @@ impl GrowthSection {
         self.state = GrowthSectionState::FullyGrown { child_indices };
     }
 
-    /// Primary growth & tropism physics update
+    /// Growth and tropism for one step of `delta_time` hours.
     pub fn update_physics(
         &mut self,
         delta_time: f32,
         light_direction: Vector2D,
         light_intensity: f32,
+        params: &GrowthParams,
     ) {
         if let GrowthSectionState::Growing = self.state {
             // 1. Advance length (light intensity speeds up or slows down growth)
-            let effective_growth_rate = self.growth_rate * light_intensity;
-            self.current_length += effective_growth_rate * delta_time;
+            self.current_length += params.growth_rate * light_intensity * delta_time;
 
-            // 2. Gravitropism Force (-PI/2 is UP in 2D screen space where +Y is Down)
-            let gravity_torque = (ANGLE_UP - self.angle).sin() * self.gravitropism_weight;
+            // 2. Gravitropism torque (-PI/2 is UP in 2D screen space where +Y is down)
+            let gravity_torque = (ANGLE_UP - self.angle).sin() * params.gravitropism_rate;
 
-            // 3. Phototropism Force (Bend toward local light source)
+            // 3. Phototropism torque, weaker in shade
             let light_angle = light_direction.angle();
-            // Scale phototropism by light intensity (leaves in deep shadow don't bend toward light as strongly)
             let photo_torque =
-                (light_angle - self.angle).sin() * self.phototropism_weight * light_intensity;
+                (light_angle - self.angle).sin() * params.phototropism_rate * light_intensity;
 
-            // 4. Structural Flexibility (Thinner, younger tips bend much more easily than thick wood)
-            let flexibility = (1.5 / self.thickness.max(0.5)).clamp(0.1, 2.0);
+            // 4. Thinner, younger tips bend more easily than thick wood
+            let flexibility = (params.flexibility_reference_thickness
+                / self.thickness.max(params.min_flexibility_thickness))
+            .clamp(0.1, 2.0);
 
-            // 5. Combine Forces & Apply Smooth Rotational Torque
-            let net_torque = gravity_torque + photo_torque;
-            self.angle += net_torque * flexibility * delta_time;
+            self.angle += (gravity_torque + photo_torque) * flexibility * delta_time;
         }
     }
 }

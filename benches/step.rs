@@ -10,7 +10,7 @@ use std::time::Duration;
 use tree_simulator::{TreeSimulation, Vector2D};
 
 fn grow_to_finish(seed: u64) -> usize {
-    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), 20.0, seed);
+    let mut sim = TreeSimulation::new(Vector2D::new(0.0, 0.0), seed);
     while !sim.is_finished() {
         sim.step();
     }
