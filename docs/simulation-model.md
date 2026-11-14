@@ -20,7 +20,7 @@ The tree is a list of **growth sections**. Each is one botanical internode, node
 
 ## Time
 
-The simulation advances in fixed steps of `SIM_DT` = 1 simulated hour. Each frame, `plan_steps` adds real frame time (clamped to 0.1 s) × speed to an accumulator and runs as many whole steps as it holds, up to 64. Past the cap the simulation slows down instead of building a backlog. Speed is simulated hours per real second (slider value × `SPEED_SCALE` 300, so 1× is about a year per 30 s), the same on any display. There are no seasons yet (roadmap step 12): a year's growth is spread evenly over all 8,760 hours. All randomness comes from a generator seeded per tree, so a seed reproduces a tree exactly.
+The simulation advances in fixed steps of `SIM_DT` = 1 simulated hour. Each frame, `plan_steps` adds real frame time (clamped to 0.1 s) × speed to an accumulator and runs as many whole steps as it holds, up to 64. Past the cap the simulation slows down instead of building a backlog. Speed is simulated hours per real second (slider value × `SPEED_SCALE` 3,000, so 1× is about a year per 3 s; above ~1.3× the 64-step cap per frame sets the pace), the same on any display. There are no seasons yet (roadmap step 12): a year's growth is spread evenly over all 8,760 hours. All randomness comes from a generator seeded per tree, so a seed reproduces a tree exactly.
 
 ## Each step, for every growing section
 

@@ -50,8 +50,10 @@ async fn main() {
     let mut is_paused = false;
     // Leaves unfold over a simulated week.
     const LEAF_GROW_DURATION: f32 = 7.0 * 24.0;
-    // Simulated hours per real second at the slider's 1×: about a year per 30 s (plan 0003, D18).
-    const SPEED_SCALE: f32 = 300.0;
+    // Simulated hours per real second at the slider's 1×: about a year per 3 s. Raised from
+    // 300 (a year per 30 s), which was too slow to watch. Higher slider settings hit
+    // MAX_STEPS_PER_FRAME and run as fast as the machine allows.
+    const SPEED_SCALE: f32 = 3000.0;
 
     loop {
         let raw_delta_time = get_frame_time();
