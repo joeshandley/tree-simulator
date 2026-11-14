@@ -87,8 +87,12 @@ impl TreeSimulation {
         sim
     }
 
-    /// Advances the simulation by one fixed step of `SIM_DT`.
+    /// Advances the simulation by one fixed step of `SIM_DT`. Does nothing once
+    /// every section has stopped growing, so `hours` is the tree's final age.
     pub fn step(&mut self) {
+        if self.is_finished() {
+            return;
+        }
         self.update(SIM_DT);
         self.hours += 1;
     }
@@ -401,6 +405,24 @@ mod tests {
             sim.step();
         }
         assert!(sim.hours.abs_diff(expected) <= 1, "took {} h, expected ~{expected} h", sim.hours);
+    }
+
+    #[test]
+    fn clock_stops_when_tree_finishes() {
+        // A floor equal to the internode length makes the trunk its only section.
+        let params = GrowthParams {
+            min_viable_internode_length: GrowthParams::default().internode_length,
+            ..GrowthParams::default()
+        };
+        let mut sim = TreeSimulation::with_params(START, 1, params);
+        while !sim.is_finished() {
+            sim.step();
+        }
+        let finished_at = sim.hours;
+        for _ in 0..100 {
+            sim.step();
+        }
+        assert_eq!(sim.hours, finished_at);
     }
 
     #[test]
