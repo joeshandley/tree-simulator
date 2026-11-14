@@ -14,7 +14,7 @@ const ANCESTOR_SKIP_DEPTH: usize = 20;
 
 /// Fractional jitter applied to a newly created internode's target length, e.g.
 /// 0.08 = +/-8%. Proportional rather than flat so it stays a minor variation at
-/// large lengths but doesn't dominate/destabilize fork outcomes once lengths
+/// large lengths but doesn't dominate/destabilise fork outcomes once lengths
 /// have decayed down near `GrowthParams::min_viable_internode_length`.
 const LENGTH_JITTER_FRACTION: f32 = 0.08;
 
@@ -49,8 +49,8 @@ pub fn plan_steps(accumulator: f32, frame_time: f32, speed: f32) -> (u32, f32) {
     (steps, remaining)
 }
 
-/// How strongly a fork's leader-side coin flip is biased toward correcting
-/// the axis back toward vertical, vs. a pure 50/50 flip. 0.0 = unbiased
+/// How strongly a fork's leader-side coin flip is biased towards correcting
+/// the axis back towards vertical, vs. a pure 50/50 flip. 0.0 = unbiased
 /// (random walk); higher values self-correct faster but look less naturally
 /// random. Kept well short of 1.0 so the leader still visibly zigzags rather
 /// than snapping straight — real sympodial zigzag is statistical, not exact.
@@ -259,8 +259,8 @@ impl TreeSimulation {
 
             let leader_angle_offset =
                 self.params.branch_angle_spread * (1.0 - self.params.dominance_ratio);
-            // Bias which side the leader kinks toward correcting the axis
-            // back toward vertical, instead of a pure coin flip. A thick,
+            // Bias which side the leader kinks towards correcting the axis
+            // back towards vertical, instead of a pure coin flip. A thick,
             // low-flexibility leader (see `dominance_ratio`) barely bends
             // via gravitropism before it freezes, so an unbiased flip is a
             // true random walk in heading that never self-corrects and
@@ -310,7 +310,7 @@ impl TreeSimulation {
 
             // Both may fail the viability floor (rare at dominance_ratio
             // extremes) — freezing with an empty child list terminates
-            // this axis for good, same as the old symmetric behavior.
+            // this axis for good.
             section.freeze_at(end_pos, child_indices);
         } else {
             // Continuation: same angle/thickness/target length, no decay applied.

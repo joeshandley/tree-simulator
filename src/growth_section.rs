@@ -16,7 +16,6 @@ pub struct GrowthSection {
     pub thickness: f32,
     pub state: GrowthSectionState,
     pub parent_index: Option<usize>,
-    pub leaf_timer: f32,
     /// Authoritative end point once `state` is `FullyGrown`. Frozen wood never
     /// moves again, so callers should rely on `end_point()` rather than reading
     /// this field directly.
@@ -42,7 +41,6 @@ impl GrowthSection {
             thickness,
             state: GrowthSectionState::Growing,
             parent_index,
-            leaf_timer: 0.0,
             cached_end_point: start_point,
             internodes_since_fork: 0,
         }

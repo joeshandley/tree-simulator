@@ -21,14 +21,6 @@ impl Vector2D {
         self.y.atan2(self.x)
     }
 
-    /// Subtracts another vector (`rhs`) from `self`, returning a vector pointing from `rhs` to `self`.
-    pub fn sub(self, rhs: Self) -> Self {
-        Self {
-            x: self.x - rhs.x,
-            y: self.y - rhs.y,
-        }
-    }
-
     /// Calculates the dot product between `self` and `rhs` (`x1*x2 + y1*y2`).
     ///
     /// Indicates alignment: positive if pointing generally together, zero if perpendicular, negative if opposing.
@@ -47,12 +39,12 @@ impl Vector2D {
     ///
     /// Projects the point onto segment `[a, b]` using dot product projection, clamped between `0.0` and `1.0`.
     pub fn distance_to_segment(self, a: Vector2D, b: Vector2D) -> f32 {
-        let ab = b.sub(a);
-        let ap = self.sub(a);
+        let ab = b - a;
+        let ap = self - a;
         let ab_len_sq = ab.length_squared();
 
         if ab_len_sq == 0.0 {
-            return self.sub(a).length_squared().sqrt();
+            return (self - a).length_squared().sqrt();
         }
 
         let t = (ap.dot(ab) / ab_len_sq).clamp(0.0, 1.0);
@@ -61,7 +53,7 @@ impl Vector2D {
             y: a.y + t * ab.y,
         };
 
-        self.sub(closest_point).length_squared().sqrt()
+        (self - closest_point).length_squared().sqrt()
     }
 
     /// Tests if an infinite ray starting at `origin` in direction `dir` intersects line segment `[seg_start, seg_end]`.
@@ -73,8 +65,8 @@ impl Vector2D {
         seg_start: Vector2D,
         seg_end: Vector2D,
     ) -> bool {
-        let v1 = origin.sub(seg_start);
-        let v2 = seg_end.sub(seg_start);
+        let v1 = origin - seg_start;
+        let v2 = seg_end - seg_start;
         let v3 = Vector2D {
             x: -dir.y,
             y: dir.x,
@@ -89,6 +81,18 @@ impl Vector2D {
         let t2 = v1.dot(v3) / dot;
 
         t1 >= 0.0 && (0.0..=1.0).contains(&t2)
+    }
+}
+
+/// `a - b` is the vector pointing from `b` to `a`.
+impl std::ops::Sub for Vector2D {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }
 
@@ -132,7 +136,7 @@ mod tests {
         let v2 = Vector2D::new(2.0, 3.0);
 
         // Exact integer math represented as floats is exact, so assert_eq! works fine here
-        assert_eq!(v1.sub(v2), Vector2D::new(3.0, 4.0));
+        assert_eq!(v1 - v2, Vector2D::new(3.0, 4.0));
     }
 
     #[test]

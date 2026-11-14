@@ -1,103 +1,75 @@
 use macroquad::prelude::*;
 
-/// Draws an interactive toggle button in screen space.
-/// Returns `true` on the exact frame the button is clicked.
-pub fn draw_toggle_button(
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    label: &str,
-    on_text: &str,
-    off_text: &str,
-    is_on: bool,
-) -> bool {
-    let (mx, my) = mouse_position();
-    let is_hovered = mx >= x && mx <= x + width && my >= y && my <= y + height;
+const BUTTON_ON: Color = Color::new(0.12, 0.51, 0.24, 1.0);
+const BUTTON_ON_HOVER: Color = Color::new(0.16, 0.63, 0.31, 1.0);
+const BUTTON_OFF: Color = Color::new(0.27, 0.27, 0.27, 1.0);
+const BUTTON_OFF_HOVER: Color = Color::new(0.39, 0.39, 0.39, 1.0);
 
-    let bg_color = if is_hovered {
-        if is_on {
-            Color::from_rgba(40, 160, 80, 255)
-        } else {
-            Color::from_rgba(100, 100, 100, 255)
-        }
-    } else {
-        if is_on {
-            Color::from_rgba(30, 130, 60, 255)
-        } else {
-            Color::from_rgba(70, 70, 70, 255)
-        }
-    };
-
-    draw_rectangle(x, y, width, height, bg_color);
-    draw_rectangle_lines(x, y, width, height, 2.0, DARKGRAY);
-
-    let display_text = if label.is_empty() {
-        if is_on {
-            on_text.to_string()
-        } else {
-            off_text.to_string()
-        }
-    } else {
-        format!("{}: {}", label, if is_on { on_text } else { off_text })
-    };
-
-    draw_text(&display_text, x + 10.0, y + height / 2.0 + 5.0, 14.0, WHITE);
-
-    is_hovered && is_mouse_button_pressed(MouseButton::Left)
+fn is_hovered(rect: Rect) -> bool {
+    rect.contains(mouse_position().into())
 }
 
-/// Draws an interactive slider.
-/// Modifies the `value` directly when dragged.
-pub fn draw_slider(
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    label: &str,
-    value: &mut f32,
-    min_val: f32,
-    max_val: f32,
-) -> bool {
-    let (mx, my) = mouse_position();
-    let is_hovered = mx >= x && mx <= x + width && my >= y && my <= y + height;
+fn draw_label(rect: Rect, text: &str) {
+    draw_text(
+        text,
+        rect.x + 10.0,
+        rect.y + rect.h / 2.0 + 5.0,
+        14.0,
+        WHITE,
+    );
+}
 
-    // Check if mouse button is held down this frame
-    let is_down = is_mouse_button_down(MouseButton::Left);
+/// Draws a toggle button in screen space and returns `true` on the frame it's
+/// clicked. Shows `label: on_text/off_text`, or just the state text if `label` is empty.
+pub fn toggle_button(rect: Rect, label: &str, on_text: &str, off_text: &str, is_on: bool) -> bool {
+    let hovered = is_hovered(rect);
+    let colour = match (is_on, hovered) {
+        (true, true) => BUTTON_ON_HOVER,
+        (true, false) => BUTTON_ON,
+        (false, true) => BUTTON_OFF_HOVER,
+        (false, false) => BUTTON_OFF,
+    };
+    draw_rectangle(rect.x, rect.y, rect.w, rect.h, colour);
+    draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0, DARKGRAY);
 
-    // To handle dragging smoothly even if the mouse moves outside the slider bounds:
-    // We track interaction if it started here, or if it is currently hovered while down.
-    // However, a simple immediate-mode check: if hovered or actively dragging.
-    // Macroquad maps touches to mouse events by default, making this unified.
-    static mut SLIDER_ACTIVE: bool = false;
+    let state = if is_on { on_text } else { off_text };
+    let text = if label.is_empty() {
+        state.to_string()
+    } else {
+        format!("{label}: {state}")
+    };
+    draw_label(rect, &text);
 
-    unsafe {
-        if is_hovered && is_mouse_button_pressed(MouseButton::Left) {
-            SLIDER_ACTIVE = true;
+    hovered && is_mouse_button_pressed(MouseButton::Left)
+}
+
+/// A slider's drag state, owned by the caller so each slider tracks its own drag.
+#[derive(Default)]
+pub struct Slider {
+    dragging: bool,
+}
+
+impl Slider {
+    /// Draws the slider and updates `value` while it's dragged. Returns `true`
+    /// while dragging, so the caller can ignore the same mouse drag elsewhere.
+    pub fn draw(&mut self, rect: Rect, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
+        if is_hovered(rect) && is_mouse_button_pressed(MouseButton::Left) {
+            self.dragging = true;
         }
-        if !is_down {
-            SLIDER_ACTIVE = false;
+        if !is_mouse_button_down(MouseButton::Left) {
+            self.dragging = false;
+        }
+        if self.dragging {
+            let fraction = ((mouse_position().0 - rect.x) / rect.w).clamp(0.0, 1.0);
+            *value = min + fraction * (max - min);
         }
 
-        if SLIDER_ACTIVE {
-            let normalized_x = ((mx - x) / width).clamp(0.0, 1.0);
-            *value = min_val + normalized_x * (max_val - min_val);
-        }
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, BUTTON_OFF);
+        let fill = (*value - min) / (max - min) * rect.w;
+        draw_rectangle(rect.x, rect.y, fill, rect.h, BUTTON_ON_HOVER);
+        draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 2.0, DARKGRAY);
+        draw_label(rect, &format!("{label}: {value:.1}x"));
 
-        // Draw track background
-        draw_rectangle(x, y, width, height, Color::from_rgba(70, 70, 70, 255));
-
-        // Draw filled portion
-        let fill_width = ((*value - min_val) / (max_val - min_val)) * width;
-        draw_rectangle(x, y, fill_width, height, Color::from_rgba(40, 160, 80, 255));
-
-        // Draw outline
-        draw_rectangle_lines(x, y, width, height, 2.0, DARKGRAY);
-
-        // Draw label and value
-        let display_text = format!("{}: {:.1}x", label, value);
-        draw_text(&display_text, x + 10.0, y + height / 2.0 + 5.0, 14.0, WHITE);
-
-        SLIDER_ACTIVE
+        self.dragging
     }
 }
