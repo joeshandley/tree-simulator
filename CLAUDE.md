@@ -2,6 +2,8 @@
 
 A 2D tree-growth simulation in Rust, drawn with macroquad. One tree grows from a trunk, bends towards light and against gravity, forks, avoids its own wood and grows leaves at its tips.
 
+**Goal: the most realistic tree simulator, realistic in mechanism, not just in appearance.** Prefer changes that make growth emerge from biology (light, resources, buds, wood mechanics) over hand-tuned rules that imitate it. 2D first; 3D is out of scope. Plan every change against this (`docs/roadmap.md`).
+
 ## Starting a session
 
 1. Read `docs/roadmap.md` and **restate its priority list to the author** so they can reprioritise or drop items before work starts.

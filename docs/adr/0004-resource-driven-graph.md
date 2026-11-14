@@ -49,3 +49,7 @@ Separating read from write keeps the arena (ADR-0001) borrow-safe and the passes
 
 - Palubicki et al. (2009), *Self-organizing tree models for image synthesis*: combines L-systems with Borchert–Honda resource flow.
 - Prusinkiewicz & Lindenmayer, *The Algorithmic Beauty of Plants*: the botanical rules to overlay on the resource graph later.
+
+## Amendments
+
+- **14 Nov 2026.** Timing settled: this is step 9 of the roadmap, after the timestep, measurement, performance, units, light and bud steps. It also absorbs stochastic branching outcomes, dormancy and self-pruning, which were separate roadmap items. Reason: the goal is realism in mechanism, so tuning phenomenological rules that this replaces would be wasted work (`docs/roadmap.md`, author, 14 Nov 2026).
