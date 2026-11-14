@@ -29,9 +29,11 @@ Today's growth rules are phenomenological (tuned to look right). Items that only
 2. ~~Measurement harness~~ (done). Baseline in `docs/metrics/baseline.md`.
 3. ~~Real units and parameters~~ (done, plan 0003). Was: metres and hours instead of pixels and "simulated seconds"; growth rates and internode lengths from botanical sources; all parameters in one struct, each citing its source. Guide species: elm (single trunk, distichous, sympodial, UK native), with hazel then hornbeam and lime as fallbacks where elm data is thin (author, 14 Nov 2026).
 4. **Leaves as light occluders.**
+   - **Design question first: a shade map instead of per-branch rays.** Palubicki et al. (2009) use a shadow-propagation grid: each bud or leaf adds shade to a cone of cells below it, and a tip reads its light from one cell. That could replace per-tip ray scans and fold steps 5 and 7 into one design. Do solid research before deciding (author, 14 Nov 2026). Include a debug overlay that draws the shade map.
 5. **Sky light model.** Several rays across the sky dome, weighted for sun path and diffuse light.
 6. ~~Cheap collision wins~~ (done early, plan 0004): ancestor chains cached, geometry checked before relatedness; whole runs ~7.8× faster with identical trees. Squared distance skipped: it could flip borderline collisions for a negligible gain.
 7. **Spatial grid** for proximity and ray queries, if needed. Step 2 measured the largest seeded tree (2,083 sections) growing start to finish in 186 ms, slowest step 659 µs (release, 14 Nov 2026), so not needed yet; re-measure after step 5.
+7a. **Debug/dev mode.** A toggle that hides developer information from normal users: seed, section count, shade-map overlay, and more as needed. Decide what belongs in it when the shade map lands (author, 14 Nov 2026).
 8. **Buds as entities.** Each node carries axillary buds on alternating sides (2D phyllotaxis), each with a fate: growing, dormant or dead.
 9. **Resource-driven growth** (ADR-0004). Light becomes carbon, which flows through the graph; bud fate follows local resource. Replaces fork cadence, dominance parameters (ADR-0003), stochastic branching outcomes, dormancy and self-pruning.
 10. **Pipe-model thickness and secondary growth.** Diameter from the children's cross-sections, thickening each year.
@@ -53,7 +55,7 @@ From the 13 Nov 2026 code audit (5 bugs, 7 risks, 7 design issues, 11 nits; the 
 
 - ~~Stall wrecks the tree; speed capped at one internode per tip per frame; shape depends on speed and frame rate; no seed control.~~ Fixed by step 1 (14 Nov 2026).
 - **Vertical pan** moves 1.33× faster than the cursor (`src/main.rs`: pan sensitivity uses width for both axes).
-- **Thin branches can pass through each other** (3 of 48 test trees; `src/simulation.rs` clearance check).
+- **Thin branches can pass through each other** (3 of 48 test trees; `src/simulation.rs` clearance check). Not worth perfecting: collision is mostly a 2D artefact and will be removed or trimmed in 3D; light competition and the resource model should take over (author, 14 Nov 2026).
 - **Shade ignores close relatives.** The relative-skip used for collision also hides a branch's own nearby wood from the shade ray.
 - **Shared slider state.** `ui::draw_slider` uses a `static mut`.
 - **Hard-coded re-centre.** `C` resets to `(400, 300)` rather than `default_camera_target`.
