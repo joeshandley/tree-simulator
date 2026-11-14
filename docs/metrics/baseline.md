@@ -3,18 +3,18 @@
 Written by `cargo run --release --example metrics -- --write`. Definitions: plan 0002 (D11). When a definition changes, add a dated note here; older numbers stop being comparable.
 
 - **Date:** 2026-11-14
-- **Commit:** `e635ae6`
+- **Commit:** `29b30af` (code at time of run)
 - **Machine:** Apple M5 (macos aarch64)
 - **Seeds:** 1-20
 
 | Metric | Mean | Min | Max |
 |---|---|---|---|
-| Steps to finish | 811 | 448 | 1175 |
-| Sections | 1108 | 355 | 2083 |
-| Tips | 55 | 18 | 106 |
-| Height | 598.6 | 326.5 | 870.4 |
-| Crown width | 348.7 | 203.0 | 446.7 |
-| Fork angle (°) | 53.5 | 52.0 | 54.8 |
+| Years to finish | 5.0 | 2.6 | 8.4 |
+| Sections | 1440 | 370 | 3649 |
+| Tips | 56 | 15 | 149 |
+| Height (m) | 1.90 | 0.92 | 3.26 |
+| Crown width (m) | 1.03 | 0.59 | 1.41 |
+| Fork angle (°) | 53.6 | 51.9 | 54.9 |
 | Leonardo ratio | 0.962 | 0.962 | 0.962 |
-| Time per step (µs) | 66 | 11 | 198 |
-| Slowest step (µs) | 245 | 53 | 659 |
+| Time per step (µs) | 183 | 19 | 696 |
+| Slowest step (µs) | 1540 | 102 | 11885 |
