@@ -30,7 +30,7 @@ The Rust toolchain is installed **inside the project** in `.toolchain/` (git-ign
 ```sh
 source env.sh            # once per terminal: points cargo at .toolchain/
 cargo run --release      # open the simulator window
-./watch.sh               # same, but rebuilds and relaunches on every change to src/
+cargo dev                # same, but rebuilds and relaunches on every change to src/
 cargo test               # unit tests
 cargo clippy             # lints
 ```

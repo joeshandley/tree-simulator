@@ -1,0 +1,4 @@
+[alias]
+# `cargo dev`: rebuild and relaunch the simulator whenever src/ or Cargo.toml changes.
+# Needs cargo-watch from the project-local toolchain (`source env.sh` first).
+dev = "watch -w src -w Cargo.toml -x 'run --release'"
