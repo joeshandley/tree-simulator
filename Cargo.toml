@@ -5,3 +5,10 @@ edition = "2024"
 
 [dependencies]
 macroquad = "0.4"
+[dev-dependencies]
+# Timing only (plan 0002, D7). Slim features: no plots, no rayon.
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "step"
+harness = false
