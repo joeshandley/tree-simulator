@@ -1,12 +1,12 @@
 //! Every tunable growth parameter, in SI units: metres, hours, radians (plan 0003).
 //!
 //! Each field states its unit and where its value comes from. "Estimate" means
-//! no measured source yet: values are placeholders until roadmap step 14
+//! no measured source yet: values are placeholders until roadmap step 15
 //! calibrates them against real elm. Guide species: elm (Ulmus), with hazel,
 //! hornbeam and lime as fallbacks (research notes:
 //! `~/claude-workspace/tree-simulator/research/elm-parameters.md`, 14 Nov 2026).
 
-/// Hours in a year. Until seasons exist (roadmap step 12), a year's growth is
+/// Hours in a year. Until seasons exist (roadmap step 13), a year's growth is
 /// spread evenly over all of them.
 pub const HOURS_PER_YEAR: f32 = 8_760.0;
 
@@ -32,7 +32,7 @@ pub struct GrowthParams {
     pub length_decay: f32,
     /// Thickness multiplier per fork (dimensionless). ~1/√2 per Leonardo's rule
     /// (a split in two conserves cross-section area). Replaced by the pipe model
-    /// at roadmap step 10.
+    /// at roadmap step 11.
     pub thickness_decay: f32,
     /// Leader's share of a fork's thickness budget; 0.5 is symmetric. Models
     /// sympodial apical dominance (ADR-0003). Tuned.

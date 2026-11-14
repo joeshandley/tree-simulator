@@ -53,3 +53,4 @@ Separating read from write keeps the arena (ADR-0001) borrow-safe and the passes
 ## Amendments
 
 - **14 Nov 2026.** Timing settled: this is step 9 of the roadmap, after the timestep, measurement, performance, units, light and bud steps. It also absorbs stochastic branching outcomes, dormancy and self-pruning, which were separate roadmap items. Reason: the goal is realism in mechanism, so tuning phenomenological rules that this replaces would be wasted work (`docs/roadmap.md`, author, 14 Nov 2026).
+- **14 Nov 2026 (later).** The roadmap was renumbered when a debug-mode step was added: this is now step 10.
