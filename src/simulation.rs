@@ -56,6 +56,30 @@ pub fn plan_steps(accumulator: f32, frame_time: f32, speed: f32) -> (u32, f32) {
 /// than snapping straight — real sympodial zigzag is statistical, not exact.
 const LEADER_CORRECTION_STRENGTH: f32 = 0.35;
 
+/// Light at a growing tip for one step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LightSample {
+    /// Wood within clearance of the tip: no light, and the section stops growing.
+    pub blocked: bool,
+    /// Sections crossing the ray from the tip towards the sun.
+    pub shading_sections: i32,
+}
+
+impl LightSample {
+    /// 0 when blocked; otherwise each shading section passes `SHADE_TRANSMISSION`.
+    pub fn intensity(self) -> f32 {
+        if self.blocked {
+            0.0
+        } else {
+            SHADE_TRANSMISSION.powi(self.shading_sections)
+        }
+    }
+}
+
+/// Fraction of light passing each shading section. Estimate; replaced by the
+/// shade-map design question at roadmap step 4.
+const SHADE_TRANSMISSION: f32 = 0.85;
+
 pub struct TreeSimulation {
     pub growth_sections: Vec<GrowthSection>,
     /// Every tunable, in metres and hours (plan 0003).
@@ -102,225 +126,214 @@ impl TreeSimulation {
     }
 
     fn update(&mut self, delta_time: f32) {
-        // Convert the azimuth angle into a normalized directional vector
-        let global_light_dir = Vector2D {
+        let light_dir = Vector2D {
             x: self.params.sun_azimuth.cos(),
             y: self.params.sun_azimuth.sin(),
         };
+        // Children made this step are appended after the loop, so indices stay valid.
         let num_sections = self.growth_sections.len();
         let mut new_sections = Vec::new();
 
         for i in 0..num_sections {
-            // Only growing sections need collision & light sampling
             if !matches!(self.growth_sections[i].state, GrowthSectionState::Growing) {
                 continue;
             }
-
-            let tip = self.growth_sections[i].end_point();
-            let mut shadow_count = 0;
-            let mut is_blocked = false;
-
-            for j in 0..num_sections {
-                // Skip self, and sections that just spawned and have no length yet
-                if i == j || self.growth_sections[j].current_length <= f32::EPSILON {
-                    continue;
-                }
-
-                // Cheap geometry first: most sections are nowhere near this tip,
-                // so the relative check below runs only for the rare hits (plan 0004).
-                let other_start = self.growth_sections[j].start_point;
-                let other_end = self.growth_sections[j].end_point();
-
-                // 1. Physical collision guard: blocked within safety clearance of another section
-                let dist = tip.distance_to_segment(other_start, other_end);
-                let min_clearance = (self.growth_sections[i].thickness
-                    + self.growth_sections[j].thickness)
-                    * self.params.thickness_decay;
-                let too_close = dist < min_clearance;
-
-                // 2. Canopy occlusion: another section between this tip and the sun
-                let shades = !too_close
-                    && Vector2D::ray_intersects_segment(
-                        tip,
-                        global_light_dir,
-                        other_start,
-                        other_end,
-                    );
-
-                if !too_close && !shades {
-                    continue;
-                }
-
-                // Recent relatives don't count: a direct ancestor/descendant of i, or a
-                // "cousin" sharing a common ancestor within the bounded depth (e.g. the
-                // other fork child's own continuations). With short internodes a tip is
-                // always geometrically close to its own recent wood.
-                let chains = &self.ancestor_chains;
-                let is_recent_relative = chains[i].contains(&j)
-                    || chains[j].contains(&i)
-                    || chains[i].iter().any(|a| chains[j].contains(a));
-                if is_recent_relative {
-                    continue;
-                }
-
-                if too_close {
-                    is_blocked = true;
-                    break;
-                }
-                shadow_count += 1;
-            }
-
-            // Calculate effective light intensity:
-            // 0.0 if blocked physically, exponentially reduced by overhead canopy layers
-            let local_light_intensity = if is_blocked {
-                0.0
-            } else {
-                0.85_f32.powi(shadow_count)
-            };
-
-            // Now create a mutable version of the section at index i
+            let light = self.sample_light(i, light_dir);
             let section = &mut self.growth_sections[i];
+            section.update_physics(delta_time, light_dir, light.intensity(), &self.params);
 
-            // Apply physics with the dynamically calculated local light
-            section.update_physics(
-                delta_time,
-                global_light_dir,
-                local_light_intensity,
-                &self.params,
-            );
-
-            // Handle internode completion: fork into two children, continue as one, or terminate.
             if section.current_length >= section.max_length {
-                section.current_length = section.max_length; // Clamp
-
-                // Unconditional size floor: an axis whose own target length has
-                // already shrunk to the floor stops for good here, regardless of
-                // the fork-vs-continue cadence below. Without this, continuation
-                // never re-checks size at all (only a fork attempt does), so an
-                // axis could keep spawning several more undersized internodes
-                // before its next scheduled fork check ever looked at length.
-                if section.max_length <= self.params.min_viable_internode_length {
-                    section.freeze(Vec::new());
-                    continue;
-                }
-
-                let end_pos = section.end_point();
-                let jitter_roll = self.rng.gen_range(0.0, 1.0);
-                let fork_due = should_fork(
-                    section.internodes_since_fork,
-                    self.params.fork_interval,
-                    self.params.fork_jitter,
-                    jitter_roll,
-                );
-
-                if fork_due {
-                    // Split the fork's combined decay budget asymmetrically: the
-                    // leader keeps most of it (longer, thicker, straighter), the
-                    // lateral gets the remainder (shorter, thinner, wider angle) —
-                    // see `dominance_ratio` doc comment for the biological basis.
-                    //
-                    // Length uses a softened ratio (see `length_dominance_blend`):
-                    // at the full dominance_ratio, the lateral's length shrinks so
-                    // fast across generations that it hits min_viable_internode_length
-                    // after only one or two forks and can never build out a
-                    // sub-canopy. Thickness/angle keep the full ratio since those
-                    // don't compound the same way — a thinner, more-angled lateral
-                    // still reads as visually subordinate without being starved out.
-                    let length_ratio = 0.5
-                        + (self.params.dominance_ratio - 0.5) * self.params.length_dominance_blend;
-                    let leader_length =
-                        section.max_length * self.params.length_decay * 2.0 * length_ratio;
-                    let lateral_length =
-                        section.max_length * self.params.length_decay * 2.0 * (1.0 - length_ratio);
-                    let leader_thickness = section.thickness
-                        * self.params.thickness_decay
-                        * 2.0
-                        * self.params.dominance_ratio;
-                    let lateral_thickness = section.thickness
-                        * self.params.thickness_decay
-                        * 2.0
-                        * (1.0 - self.params.dominance_ratio);
-
-                    let leader_angle_offset =
-                        self.params.branch_angle_spread * (1.0 - self.params.dominance_ratio);
-                    // Bias which side the leader kinks toward correcting the axis
-                    // back toward vertical, instead of a pure coin flip. A thick,
-                    // low-flexibility leader (see `dominance_ratio`) barely bends
-                    // via gravitropism before it freezes, so an unbiased flip is a
-                    // true random walk in heading that never self-corrects and
-                    // compounds into a wandering, snake-like trunk over many forks.
-                    // Reuses gravitropism's own signed sin() convention (see
-                    // `update_physics`): positive means increasing angle is the
-                    // corrective direction, so it lowers the odds of the "left"
-                    // (angle-decreasing) option in that case, and vice versa.
-                    let restoring_direction = (ANGLE_UP - section.angle).sin();
-                    let leader_on_left_probability =
-                        (0.5 - restoring_direction * LEADER_CORRECTION_STRENGTH).clamp(0.1, 0.9);
-                    let leader_on_left = self.rng.gen_range(0.0, 1.0) < leader_on_left_probability;
-                    let (leader_angle, lateral_angle) = if leader_on_left {
-                        (
-                            section.angle - leader_angle_offset,
-                            section.angle + self.params.branch_angle_spread,
-                        )
-                    } else {
-                        (
-                            section.angle + leader_angle_offset,
-                            section.angle - self.params.branch_angle_spread,
-                        )
-                    };
-
-                    let mut child_indices = Vec::new();
-
-                    if leader_length > self.params.min_viable_internode_length {
-                        child_indices.push(num_sections + new_sections.len());
-                        new_sections.push(GrowthSection::new(
-                            end_pos,
-                            leader_angle,
-                            jittered_length(leader_length, &self.rng),
-                            leader_thickness,
-                            Some(i),
-                        ));
-                    }
-                    if lateral_length > self.params.min_viable_internode_length {
-                        child_indices.push(num_sections + new_sections.len());
-                        new_sections.push(GrowthSection::new(
-                            end_pos,
-                            lateral_angle,
-                            jittered_length(lateral_length, &self.rng),
-                            lateral_thickness,
-                            Some(i),
-                        ));
-                    }
-
-                    // Both may fail the viability floor (rare at dominance_ratio
-                    // extremes) — freezing with an empty child list terminates
-                    // this axis for good, same as the old symmetric behavior.
-                    section.freeze_at(end_pos, child_indices);
-                } else {
-                    // Continuation: same angle/thickness/target length, no decay applied.
-                    let mut child = GrowthSection::new(
-                        end_pos,
-                        section.angle,
-                        jittered_length(section.max_length, &self.rng),
-                        section.thickness,
-                        Some(i),
-                    );
-                    child.internodes_since_fork = section.internodes_since_fork + 1;
-
-                    let child_idx = num_sections + new_sections.len();
-
-                    section.freeze_at(end_pos, vec![child_idx]);
-
-                    new_sections.push(child);
-                }
-            } else if is_blocked {
-                // The section is physically blocked and permanently stunted.
+                section.current_length = section.max_length;
+                self.complete_internode(i, num_sections, &mut new_sections);
+            } else if light.blocked {
+                // Physically blocked: permanently stunted.
                 section.freeze(Vec::new());
             }
         }
 
-        // Pass 2: append newly created sections with their ancestor chains. A
-        // section's ancestry never changes, so each chain is built once here.
+        self.append_sections(new_sections);
+    }
+
+    /// Light reaching growing section `i`'s tip: blocked by wood within clearance,
+    /// or shaded by each section crossing the ray towards the sun. Recent
+    /// relatives never count (see `is_recent_relative`).
+    fn sample_light(&self, i: usize, light_dir: Vector2D) -> LightSample {
+        let tip = self.growth_sections[i].end_point();
+        let mut shading_sections = 0;
+
+        for (j, other) in self.growth_sections.iter().enumerate() {
+            // Skip self, and sections that just spawned and have no length yet
+            if i == j || other.current_length <= f32::EPSILON {
+                continue;
+            }
+
+            // Cheap geometry first: most sections are nowhere near this tip,
+            // so the relative check runs only for the rare hits (plan 0004).
+            let (other_start, other_end) = (other.start_point, other.end_point());
+            let min_clearance =
+                (self.growth_sections[i].thickness + other.thickness) * self.params.thickness_decay;
+            let too_close = tip.distance_to_segment(other_start, other_end) < min_clearance;
+            let shades = !too_close
+                && Vector2D::ray_intersects_segment(tip, light_dir, other_start, other_end);
+
+            if !(too_close || shades) || self.is_recent_relative(i, j) {
+                continue;
+            }
+            if too_close {
+                return LightSample {
+                    blocked: true,
+                    shading_sections,
+                };
+            }
+            shading_sections += 1;
+        }
+        LightSample {
+            blocked: false,
+            shading_sections,
+        }
+    }
+
+    /// A direct ancestor or descendant of `i`, or a "cousin" sharing an ancestor
+    /// within `ANCESTOR_SKIP_DEPTH` (e.g. the other fork child's continuations).
+    /// With short internodes a tip is always geometrically close to its own
+    /// recent wood, so these are excluded from collision and shade.
+    fn is_recent_relative(&self, i: usize, j: usize) -> bool {
+        let chains = &self.ancestor_chains;
+        chains[i].contains(&j)
+            || chains[j].contains(&i)
+            || chains[i].iter().any(|a| chains[j].contains(a))
+    }
+
+    /// Section `i` has reached full length: stop the axis, fork into a leader
+    /// and a lateral, or continue with one child. New children go to
+    /// `new_sections`; `num_sections` is where their indices start.
+    fn complete_internode(
+        &mut self,
+        i: usize,
+        num_sections: usize,
+        new_sections: &mut Vec<GrowthSection>,
+    ) {
+        let section = &mut self.growth_sections[i];
+
+        // Size floor: an axis whose target length has shrunk to the floor stops
+        // here, whatever the fork cadence. Continuations don't re-check size, so
+        // without this an axis could keep spawning undersized internodes.
+        if section.max_length <= self.params.min_viable_internode_length {
+            section.freeze(Vec::new());
+            return;
+        }
+
+        let end_pos = section.end_point();
+        let jitter_roll = self.rng.gen_range(0.0, 1.0);
+        let fork_due = should_fork(
+            section.internodes_since_fork,
+            self.params.fork_interval,
+            self.params.fork_jitter,
+            jitter_roll,
+        );
+
+        if fork_due {
+            // Split the fork's combined decay budget asymmetrically: the
+            // leader keeps most of it (longer, thicker, straighter), the
+            // lateral gets the remainder (shorter, thinner, wider angle) —
+            // see `dominance_ratio` doc comment for the biological basis.
+            //
+            // Length uses a softened ratio (see `length_dominance_blend`):
+            // at the full dominance_ratio, the lateral's length shrinks so
+            // fast across generations that it hits min_viable_internode_length
+            // after only one or two forks and can never build out a
+            // sub-canopy. Thickness/angle keep the full ratio since those
+            // don't compound the same way — a thinner, more-angled lateral
+            // still reads as visually subordinate without being starved out.
+            let length_ratio =
+                0.5 + (self.params.dominance_ratio - 0.5) * self.params.length_dominance_blend;
+            let leader_length = section.max_length * self.params.length_decay * 2.0 * length_ratio;
+            let lateral_length =
+                section.max_length * self.params.length_decay * 2.0 * (1.0 - length_ratio);
+            let leader_thickness =
+                section.thickness * self.params.thickness_decay * 2.0 * self.params.dominance_ratio;
+            let lateral_thickness = section.thickness
+                * self.params.thickness_decay
+                * 2.0
+                * (1.0 - self.params.dominance_ratio);
+
+            let leader_angle_offset =
+                self.params.branch_angle_spread * (1.0 - self.params.dominance_ratio);
+            // Bias which side the leader kinks toward correcting the axis
+            // back toward vertical, instead of a pure coin flip. A thick,
+            // low-flexibility leader (see `dominance_ratio`) barely bends
+            // via gravitropism before it freezes, so an unbiased flip is a
+            // true random walk in heading that never self-corrects and
+            // compounds into a wandering, snake-like trunk over many forks.
+            // Reuses gravitropism's own signed sin() convention (see
+            // `update_physics`): positive means increasing angle is the
+            // corrective direction, so it lowers the odds of the "left"
+            // (angle-decreasing) option in that case, and vice versa.
+            let restoring_direction = (ANGLE_UP - section.angle).sin();
+            let leader_on_left_probability =
+                (0.5 - restoring_direction * LEADER_CORRECTION_STRENGTH).clamp(0.1, 0.9);
+            let leader_on_left = self.rng.gen_range(0.0, 1.0) < leader_on_left_probability;
+            let (leader_angle, lateral_angle) = if leader_on_left {
+                (
+                    section.angle - leader_angle_offset,
+                    section.angle + self.params.branch_angle_spread,
+                )
+            } else {
+                (
+                    section.angle + leader_angle_offset,
+                    section.angle - self.params.branch_angle_spread,
+                )
+            };
+
+            let mut child_indices = Vec::new();
+
+            if leader_length > self.params.min_viable_internode_length {
+                child_indices.push(num_sections + new_sections.len());
+                new_sections.push(GrowthSection::new(
+                    end_pos,
+                    leader_angle,
+                    jittered_length(leader_length, &self.rng),
+                    leader_thickness,
+                    Some(i),
+                ));
+            }
+            if lateral_length > self.params.min_viable_internode_length {
+                child_indices.push(num_sections + new_sections.len());
+                new_sections.push(GrowthSection::new(
+                    end_pos,
+                    lateral_angle,
+                    jittered_length(lateral_length, &self.rng),
+                    lateral_thickness,
+                    Some(i),
+                ));
+            }
+
+            // Both may fail the viability floor (rare at dominance_ratio
+            // extremes) — freezing with an empty child list terminates
+            // this axis for good, same as the old symmetric behavior.
+            section.freeze_at(end_pos, child_indices);
+        } else {
+            // Continuation: same angle/thickness/target length, no decay applied.
+            let mut child = GrowthSection::new(
+                end_pos,
+                section.angle,
+                jittered_length(section.max_length, &self.rng),
+                section.thickness,
+                Some(i),
+            );
+            child.internodes_since_fork = section.internodes_since_fork + 1;
+
+            let child_idx = num_sections + new_sections.len();
+
+            section.freeze_at(end_pos, vec![child_idx]);
+
+            new_sections.push(child);
+        }
+    }
+
+    /// Appends this step's new sections with their ancestor chains. A section's
+    /// ancestry never changes, so each chain is built once, here.
+    fn append_sections(&mut self, new_sections: Vec<GrowthSection>) {
         for section in &new_sections {
             let parent = section
                 .parent_index
@@ -461,6 +474,112 @@ mod tests {
             got, FINGERPRINT_SEED_3_AT_30K,
             "tree changed: fingerprint {got}"
         );
+    }
+
+    #[test]
+    fn fork_splits_thickness_and_angle_by_dominance() {
+        // Fork at the second internode with no jitter.
+        let params = GrowthParams {
+            fork_interval: 1,
+            fork_jitter: 0,
+            ..GrowthParams::default()
+        };
+        let mut sim = TreeSimulation::with_params(START, 1, params.clone());
+        let fork = loop {
+            sim.step();
+            let found = sim.growth_sections.iter().position(|s| {
+                matches!(&s.state, GrowthSectionState::FullyGrown { child_indices } if child_indices.len() == 2)
+            });
+            if let Some(i) = found {
+                break i;
+            }
+        };
+        let parent = &sim.growth_sections[fork];
+        let GrowthSectionState::FullyGrown { child_indices } = &parent.state else {
+            unreachable!()
+        };
+        let (a, b) = (
+            &sim.growth_sections[child_indices[0]],
+            &sim.growth_sections[child_indices[1]],
+        );
+        let (leader, lateral) = if a.thickness > b.thickness {
+            (a, b)
+        } else {
+            (b, a)
+        };
+
+        let d = params.dominance_ratio;
+        assert!((leader.thickness / lateral.thickness - d / (1.0 - d)).abs() < 1e-4);
+        // Children have grown one step at most, so their angles are still near the split.
+        let leader_offset = (leader.angle - parent.angle).abs();
+        let lateral_offset = (lateral.angle - parent.angle).abs();
+        assert!(
+            (leader_offset - params.branch_angle_spread * (1.0 - d)).abs() < 0.01,
+            "leader {leader_offset}"
+        );
+        assert!(
+            (lateral_offset - params.branch_angle_spread).abs() < 0.01,
+            "lateral {lateral_offset}"
+        );
+    }
+
+    #[test]
+    fn tilted_shoot_bends_upwards() {
+        let params = GrowthParams::default();
+        let up = Vector2D::new(0.0, -1.0);
+        let mut shoot = GrowthSection::new(START, ANGLE_UP + 0.5, 1.0, 0.002, None);
+        for _ in 0..200 {
+            shoot.update_physics(SIM_DT, up, 1.0, &params);
+        }
+        assert!(
+            (shoot.angle - ANGLE_UP).abs() < 0.5,
+            "angle moved {} rad from upright",
+            shoot.angle - ANGLE_UP
+        );
+    }
+
+    /// A frozen section from `a` to `b` with no relatives, for light tests.
+    fn add_obstacle(sim: &mut TreeSimulation, a: Vector2D, b: Vector2D) {
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let length = (dx * dx + dy * dy).sqrt();
+        let mut s = GrowthSection::new(a, dy.atan2(dx), length, 0.05, None);
+        s.current_length = length;
+        s.freeze(Vec::new());
+        sim.growth_sections.push(s);
+        sim.ancestor_chains.push(Vec::new());
+    }
+
+    #[test]
+    fn branch_overhead_shades_the_tip() {
+        let mut sim = TreeSimulation::new(START, 1);
+        add_obstacle(
+            &mut sim,
+            Vector2D::new(-0.1, -0.5),
+            Vector2D::new(0.1, -0.5),
+        );
+        let light = sim.sample_light(0, Vector2D::new(0.0, -1.0));
+        assert_eq!(
+            light,
+            LightSample {
+                blocked: false,
+                shading_sections: 1
+            }
+        );
+        assert!((light.intensity() - 0.85).abs() < 1e-6);
+    }
+
+    #[test]
+    fn branch_too_close_blocks_the_tip() {
+        let mut sim = TreeSimulation::new(START, 1);
+        add_obstacle(
+            &mut sim,
+            Vector2D::new(-0.1, -0.02),
+            Vector2D::new(0.1, -0.02),
+        );
+        let light = sim.sample_light(0, Vector2D::new(0.0, -1.0));
+        assert!(light.blocked);
+        assert_eq!(light.intensity(), 0.0);
     }
 
     #[test]
