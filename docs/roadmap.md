@@ -54,11 +54,8 @@ Allometric relationships (height–diameter, crown–height), Leonardo da Vinci'
 From the 13 Nov 2026 code audit (5 bugs, 7 risks, 7 design issues, 11 nits; the most important are listed here).
 
 - ~~Stall wrecks the tree; speed capped at one internode per tip per frame; shape depends on speed and frame rate; no seed control.~~ Fixed by step 1 (14 Nov 2026).
-- **Vertical pan** moves 1.33× faster than the cursor (`src/main.rs`: pan sensitivity uses width for both axes).
 - **Thin branches can pass through each other** (3 of 48 test trees; `src/simulation.rs` clearance check). Not worth perfecting: collision is mostly a 2D artefact and will be removed or trimmed in 3D; light competition and the resource model should take over (author, 14 Nov 2026).
 - **Shade ignores close relatives.** The relative-skip used for collision also hides a branch's own nearby wood from the shade ray.
-- **Shared slider state.** `ui::draw_slider` uses a `static mut`.
-- **Hard-coded re-centre.** `C` resets to `(400, 300)` rather than `default_camera_target`.
 - **Fixed UI layout** for an 800 × 600 window.
+- ~~Vertical pan speed, shared slider state, hard-coded re-centre, clippy warnings~~ fixed in the code tidy-up (14 Nov 2026).
 - ~~Untested update loop.~~ Arena invariant test added in step 2. It found and fixed a child/parent end-point mismatch in release builds (14 Nov 2026).
-- **Clippy:** 6 minor style warnings.

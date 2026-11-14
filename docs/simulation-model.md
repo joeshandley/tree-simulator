@@ -87,7 +87,7 @@ Constants in `src/simulation.rs`: `ANCESTOR_SKIP_DEPTH` 20, `LENGTH_JITTER_FRACT
 
 ## Leaves
 
-Drawn in `main.rs`, not the simulation. Each terminal section's `leaf_timer` counts up to one simulated week; the leaf ellipse scales in with a quadratic ease-out. Toggling leaves off resets every timer.
+Drawn in `main.rs`, not the simulation. `main.rs` keeps each tip's leaf age, counting up to one simulated week; the leaf ellipse scales in with a quadratic ease-out. Toggling leaves off resets every timer.
 
 ## Decisions behind this
 

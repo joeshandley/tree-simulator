@@ -63,8 +63,8 @@ Requires Xcode Command Line Tools for the linker. The crate uses edition 2024, s
 | `src/params.rs` | `GrowthParams`: every tunable, in metres and hours, each with its source or "estimate". |
 | `src/metrics.rs` | Tree metrics for the measurement harness. |
 | `src/simulation.rs` | `TreeSimulation`: per-frame update loop, collision and shade sampling, fork/continue/terminate decisions, tuning parameters. |
-| `src/main.rs` | Binary: window, camera, drawing branches and leaves, input, leaf timers. |
-| `src/ui.rs` | Immediate-mode toggle button and slider. |
+| `src/main.rs` | Binary: `View` state, `draw_world`, `draw_ui`, `handle_input`, leaf ages (drawing-only). |
+| `src/ui.rs` | Immediate-mode toggle button and `Slider` (each slider owns its drag state). |
 
 ## Invariants — don't break these
 
