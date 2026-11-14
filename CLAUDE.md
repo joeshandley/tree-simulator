@@ -30,6 +30,7 @@ The Rust toolchain is installed **inside the project** in `.toolchain/` (git-ign
 ```sh
 source env.sh            # once per terminal: points cargo at .toolchain/
 cargo run --release      # open the simulator window
+./watch.sh               # same, but rebuilds and relaunches on every change to src/
 cargo test               # unit tests
 cargo clippy             # lints
 ```
@@ -68,6 +69,8 @@ Requires Xcode Command Line Tools for the linker. The crate uses edition 2024, s
 - **Leaves are terminal sections.** A leaf is drawn on any `FullyGrown` section with empty `child_indices`.
 - **Screen coordinates.** +Y points down, so up is `ANGLE_UP = -π/2`.
 - **`should_fork` stays pure.** Randomness is passed in (`jitter_roll`) so it can be unit-tested.
+- **Fixed timestep.** The simulation only advances through `TreeSimulation::step()`, one `SIM_DT` at a time; `main.rs` turns real time into steps with `plan_steps`. Never pass frame time into the simulation.
+- **One random source.** All randomness comes from `TreeSimulation`'s own seeded generator, never the global `rand::` functions. Same seed and step count, same tree.
 
 ## Conventions
 

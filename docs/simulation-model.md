@@ -16,7 +16,11 @@ The tree is a list of **growth sections** (internodes): short straight segments,
     └──blocked by other wood───────────────► freeze with 0 children (tip → leaf)
 ```
 
-## Each frame, for every growing section
+## Time
+
+The simulation advances in fixed steps of `SIM_DT` = 1/60 simulated second. Each frame, `plan_steps` adds real frame time (clamped to 0.1 s) × speed to an accumulator and runs as many whole steps as it holds, up to 64. Past the cap the simulation slows down instead of building a backlog. Speed is simulated seconds per real second (slider value × `SPEED_SCALE` 4), so it's the same on any display. All randomness comes from a generator seeded per tree, so a seed reproduces a tree exactly.
+
+## Each step, for every growing section
 
 1. **Sample the environment** at the tip, checking every other section except close relatives (see *Collision* below):
    - **Collision**: if the tip is within `(own thickness + other thickness) × thickness_decay` of another segment, it's blocked.
