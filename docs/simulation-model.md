@@ -61,7 +61,7 @@ Either child is dropped if its length would fall below the floor.
 
 ## Collision: skipping relatives
 
-With short internodes, a tip is always geometrically close to its own recent wood. The check skips any section that is an ancestor, a descendant, or shares an ancestor within `ANCESTOR_SKIP_DEPTH` (20) hops. Ancestor chains are computed once per frame.
+With short internodes, a tip is always geometrically close to its own recent wood. The check skips any section that is an ancestor, a descendant, or shares an ancestor within `ANCESTOR_SKIP_DEPTH` (20) hops. Each section's ancestor chain is built once, when the section is created. The cheap distance and ray tests run first; the relative check only runs when one of them hits (plan 0004).
 
 ## Parameters
 

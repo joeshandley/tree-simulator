@@ -19,6 +19,7 @@ Last updated 14 Nov 2026. Sources: the author's build notes (imported 13 Nov 202
 - Fixed timestep and seed (step 1, plan 0001, 14 Nov 2026)
 - Measurement harness: metrics, benchmark, baseline, arena invariant test (step 2, plan 0002, 14 Nov 2026)
 - Real units and parameters: metres, hours, one section per internode, `GrowthParams` (step 3, plan 0003, ADR-0005, 14 Nov 2026)
+- Cheap collision wins, done before steps 4–5 (step 6, plan 0004, 14 Nov 2026)
 
 ## Priority list
 
@@ -29,7 +30,7 @@ Today's growth rules are phenomenological (tuned to look right). Items that only
 3. ~~Real units and parameters~~ (done, plan 0003). Was: metres and hours instead of pixels and "simulated seconds"; growth rates and internode lengths from botanical sources; all parameters in one struct, each citing its source. Guide species: elm (single trunk, distichous, sympodial, UK native), with hazel then hornbeam and lime as fallbacks where elm data is thin (author, 14 Nov 2026).
 4. **Leaves as light occluders.**
 5. **Sky light model.** Several rays across the sky dome, weighted for sun path and diffuse light.
-6. **Cheap collision wins.** Cache ancestor chains; compare squared distance instead of taking `sqrt`. Moved after the light model, which multiplies ray work (14 Nov 2026).
+6. ~~Cheap collision wins~~ (done early, plan 0004): ancestor chains cached, geometry checked before relatedness; whole runs ~7.8× faster with identical trees. Squared distance skipped: it could flip borderline collisions for a negligible gain.
 7. **Spatial grid** for proximity and ray queries, if needed. Step 2 measured the largest seeded tree (2,083 sections) growing start to finish in 186 ms, slowest step 659 µs (release, 14 Nov 2026), so not needed yet; re-measure after step 5.
 8. **Buds as entities.** Each node carries axillary buds on alternating sides (2D phyllotaxis), each with a fate: growing, dormant or dead.
 9. **Resource-driven growth** (ADR-0004). Light becomes carbon, which flows through the graph; bud fate follows local resource. Replaces fork cadence, dominance parameters (ADR-0003), stochastic branching outcomes, dormancy and self-pruning.
