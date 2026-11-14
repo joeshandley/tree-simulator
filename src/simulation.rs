@@ -64,6 +64,9 @@ pub struct TreeSimulation {
     pub seed: u64,
     /// Simulated hours since the tree was planted (one per step).
     pub hours: u64,
+    /// For each section, its ancestors nearest first, up to `ANCESTOR_SKIP_DEPTH`.
+    /// Parallel to `growth_sections`; built once when a section is created.
+    ancestor_chains: Vec<Vec<usize>>,
     /// The simulation's only source of randomness. Owned rather than global so
     /// parallel tests and future headless runs can't disturb each other.
     rng: RandGenerator,
@@ -81,6 +84,7 @@ impl TreeSimulation {
             params,
             seed,
             hours: 0,
+            ancestor_chains: Vec::new(),
             rng: seeded_rng(seed),
         };
         sim.reset(trunk_start, seed);
@@ -106,23 +110,6 @@ impl TreeSimulation {
         let num_sections = self.growth_sections.len();
         let mut new_sections = Vec::new();
 
-        // Precompute each section's bounded ancestor chain once per frame (shared by
-        // every growing tip below) rather than per (tip, candidate) pair.
-        let ancestor_chains: Vec<Vec<usize>> = (0..num_sections)
-            .map(|idx| {
-                let mut chain = Vec::with_capacity(ANCESTOR_SKIP_DEPTH);
-                let mut walk = self.growth_sections[idx].parent_index;
-                while let Some(a) = walk {
-                    if chain.len() >= ANCESTOR_SKIP_DEPTH {
-                        break;
-                    }
-                    chain.push(a);
-                    walk = self.growth_sections[a].parent_index;
-                }
-                chain
-            })
-            .collect();
-
         for i in 0..num_sections {
             // Only growing sections need collision & light sampling
             if !matches!(self.growth_sections[i].state, GrowthSectionState::Growing) {
@@ -133,53 +120,49 @@ impl TreeSimulation {
             let mut shadow_count = 0;
             let mut is_blocked = false;
 
-            'inner: for j in 0..num_sections {
-                // Skip checking against self
-                if i == j {
+            for j in 0..num_sections {
+                // Skip self, and sections that just spawned and have no length yet
+                if i == j || self.growth_sections[j].current_length <= f32::EPSILON {
                     continue;
                 }
 
-                // Skip anything in the same recent lineage: a direct ancestor/descendant
-                // of i, or a "cousin" that shares a common ancestor with i within the
-                // bounded depth (e.g. the other fork child's own continuations) — with
-                // short internodes, unrelated-looking nodes can be geometrically close
-                // to a very recent relative, so this must catch more than just parent/
-                // child/sibling.
-                let is_recent_relative = ancestor_chains[i].contains(&j)
-                    || ancestor_chains[j].contains(&i)
-                    || ancestor_chains[i]
-                        .iter()
-                        .any(|a| ancestor_chains[j].contains(a));
-
-                if is_recent_relative {
-                    continue 'inner;
-                }
-
-                // Skip sections that just spawned and have no physical length
-                if self.growth_sections[j].current_length <= f32::EPSILON {
-                    continue 'inner;
-                }
-
+                // Cheap geometry first: most sections are nowhere near this tip,
+                // so the relative check below runs only for the rare hits (plan 0004).
                 let other_start = self.growth_sections[j].start_point;
                 let other_end = self.growth_sections[j].end_point();
 
-                // 1. Physical Collision Guard:
-                // Stop growth if the tip comes within safety clearance of another section
+                // 1. Physical collision guard: blocked within safety clearance of another section
                 let dist = tip.distance_to_segment(other_start, other_end);
                 let min_clearance = (self.growth_sections[i].thickness
                     + self.growth_sections[j].thickness)
                     * self.params.thickness_decay;
+                let too_close = dist < min_clearance;
 
-                if dist < min_clearance {
+                // 2. Canopy occlusion: another section between this tip and the sun
+                let shades = !too_close
+                    && Vector2D::ray_intersects_segment(tip, global_light_dir, other_start, other_end);
+
+                if !too_close && !shades {
+                    continue;
+                }
+
+                // Recent relatives don't count: a direct ancestor/descendant of i, or a
+                // "cousin" sharing a common ancestor within the bounded depth (e.g. the
+                // other fork child's own continuations). With short internodes a tip is
+                // always geometrically close to its own recent wood.
+                let chains = &self.ancestor_chains;
+                let is_recent_relative = chains[i].contains(&j)
+                    || chains[j].contains(&i)
+                    || chains[i].iter().any(|a| chains[j].contains(a));
+                if is_recent_relative {
+                    continue;
+                }
+
+                if too_close {
                     is_blocked = true;
                     break;
                 }
-
-                // 2. Canopy Occlusion (Raycast):
-                // Check if another section is directly above this tip blocking skylight
-                if Vector2D::ray_intersects_segment(tip, global_light_dir, other_start, other_end) {
-                    shadow_count += 1;
-                }
+                shadow_count += 1;
             }
 
             // Calculate effective light intensity:
@@ -323,7 +306,15 @@ impl TreeSimulation {
             }
         }
 
-        // Pass 2: Append newly created sections
+        // Pass 2: append newly created sections with their ancestor chains. A
+        // section's ancestry never changes, so each chain is built once here.
+        for section in &new_sections {
+            let parent = section.parent_index.expect("new sections always have a parent");
+            let mut chain = Vec::with_capacity(ANCESTOR_SKIP_DEPTH);
+            chain.push(parent);
+            chain.extend(self.ancestor_chains[parent].iter().take(ANCESTOR_SKIP_DEPTH - 1));
+            self.ancestor_chains.push(chain);
+        }
         self.growth_sections.extend(new_sections);
     }
 
@@ -346,6 +337,7 @@ impl TreeSimulation {
             None,
         );
         self.growth_sections = vec![trunk];
+        self.ancestor_chains = vec![Vec::new()];
     }
 }
 
@@ -405,6 +397,24 @@ mod tests {
             sim.step();
         }
         assert!(sim.hours.abs_diff(expected) <= 1, "took {} h, expected ~{expected} h", sim.hours);
+    }
+
+    /// Hash of a seeded tree's full state. Performance work must not change it
+    /// (plan 0004): same seed and steps, bit-for-bit the same tree.
+    fn fingerprint(sim: &TreeSimulation) -> u64 {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        snapshot(sim).hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Recorded at `7f3fd35`, before the collision-loop optimisations.
+    const FINGERPRINT_SEED_3_AT_30K: u64 = 3_662_445_471_079_597_772;
+
+    #[test]
+    fn optimisations_leave_the_tree_unchanged() {
+        let got = fingerprint(&grow(3, 30_000));
+        assert_eq!(got, FINGERPRINT_SEED_3_AT_30K, "tree changed: fingerprint {got}");
     }
 
     #[test]
