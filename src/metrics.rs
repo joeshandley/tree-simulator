@@ -76,7 +76,14 @@ mod tests {
     use crate::growth_section::GrowthSection;
     use crate::vector::{ANGLE_UP, Vector2D};
 
-    fn frozen(start: Vector2D, angle: f32, length: f32, thickness: f32, parent: Option<usize>, children: Vec<usize>) -> GrowthSection {
+    fn frozen(
+        start: Vector2D,
+        angle: f32,
+        length: f32,
+        thickness: f32,
+        parent: Option<usize>,
+        children: Vec<usize>,
+    ) -> GrowthSection {
         let mut s = GrowthSection::new(start, angle, length, thickness, parent);
         s.current_length = length;
         s.freeze(children);
@@ -89,7 +96,14 @@ mod tests {
 
     #[test]
     fn straight_trunk() {
-        let tree = vec![frozen(Vector2D::new(0.0, 0.0), ANGLE_UP, 10.0, 2.0, None, vec![])];
+        let tree = vec![frozen(
+            Vector2D::new(0.0, 0.0),
+            ANGLE_UP,
+            10.0,
+            2.0,
+            None,
+            vec![],
+        )];
         let m = measure(&tree);
         assert_eq!((m.sections, m.tips), (1, 1));
         assert!(close(m.height, 10.0), "height {}", m.height);
@@ -109,8 +123,16 @@ mod tests {
         ];
         let m = measure(&tree);
         assert_eq!((m.sections, m.tips), (3, 2));
-        assert!(close(m.height, 10.0 + 5.0 * 0.5_f32.cos()), "height {}", m.height);
-        assert!(close(m.crown_width, 10.0 * 0.5_f32.sin()), "width {}", m.crown_width);
+        assert!(
+            close(m.height, 10.0 + 5.0 * 0.5_f32.cos()),
+            "height {}",
+            m.height
+        );
+        assert!(
+            close(m.crown_width, 10.0 * 0.5_f32.sin()),
+            "width {}",
+            m.crown_width
+        );
         assert!(close(m.mean_fork_angle_deg.unwrap(), 1.0_f32.to_degrees()));
         // Parent area 2² = 4 over children 1² + 1² = 2.
         assert!(close(m.mean_leonardo_ratio.unwrap(), 2.0));

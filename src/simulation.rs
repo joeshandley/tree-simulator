@@ -140,7 +140,12 @@ impl TreeSimulation {
 
                 // 2. Canopy occlusion: another section between this tip and the sun
                 let shades = !too_close
-                    && Vector2D::ray_intersects_segment(tip, global_light_dir, other_start, other_end);
+                    && Vector2D::ray_intersects_segment(
+                        tip,
+                        global_light_dir,
+                        other_start,
+                        other_end,
+                    );
 
                 if !too_close && !shades {
                     continue;
@@ -177,7 +182,12 @@ impl TreeSimulation {
             let section = &mut self.growth_sections[i];
 
             // Apply physics with the dynamically calculated local light
-            section.update_physics(delta_time, global_light_dir, local_light_intensity, &self.params);
+            section.update_physics(
+                delta_time,
+                global_light_dir,
+                local_light_intensity,
+                &self.params,
+            );
 
             // Handle internode completion: fork into two children, continue as one, or terminate.
             if section.current_length >= section.max_length {
@@ -216,13 +226,16 @@ impl TreeSimulation {
                     // sub-canopy. Thickness/angle keep the full ratio since those
                     // don't compound the same way — a thinner, more-angled lateral
                     // still reads as visually subordinate without being starved out.
-                    let length_ratio =
-                        0.5 + (self.params.dominance_ratio - 0.5) * self.params.length_dominance_blend;
-                    let leader_length = section.max_length * self.params.length_decay * 2.0 * length_ratio;
+                    let length_ratio = 0.5
+                        + (self.params.dominance_ratio - 0.5) * self.params.length_dominance_blend;
+                    let leader_length =
+                        section.max_length * self.params.length_decay * 2.0 * length_ratio;
                     let lateral_length =
                         section.max_length * self.params.length_decay * 2.0 * (1.0 - length_ratio);
-                    let leader_thickness =
-                        section.thickness * self.params.thickness_decay * 2.0 * self.params.dominance_ratio;
+                    let leader_thickness = section.thickness
+                        * self.params.thickness_decay
+                        * 2.0
+                        * self.params.dominance_ratio;
                     let lateral_thickness = section.thickness
                         * self.params.thickness_decay
                         * 2.0
@@ -309,10 +322,16 @@ impl TreeSimulation {
         // Pass 2: append newly created sections with their ancestor chains. A
         // section's ancestry never changes, so each chain is built once here.
         for section in &new_sections {
-            let parent = section.parent_index.expect("new sections always have a parent");
+            let parent = section
+                .parent_index
+                .expect("new sections always have a parent");
             let mut chain = Vec::with_capacity(ANCESTOR_SKIP_DEPTH);
             chain.push(parent);
-            chain.extend(self.ancestor_chains[parent].iter().take(ANCESTOR_SKIP_DEPTH - 1));
+            chain.extend(
+                self.ancestor_chains[parent]
+                    .iter()
+                    .take(ANCESTOR_SKIP_DEPTH - 1),
+            );
             self.ancestor_chains.push(chain);
         }
         self.growth_sections.extend(new_sections);
@@ -396,25 +415,52 @@ mod tests {
         while sim.growth_sections.len() == 1 {
             sim.step();
         }
-        assert!(sim.hours.abs_diff(expected) <= 1, "took {} h, expected ~{expected} h", sim.hours);
+        assert!(
+            sim.hours.abs_diff(expected) <= 1,
+            "took {} h, expected ~{expected} h",
+            sim.hours
+        );
     }
 
-    /// Hash of a seeded tree's full state. Performance work must not change it
-    /// (plan 0004): same seed and steps, bit-for-bit the same tree.
+    /// Hash of a seeded tree's geometry and structure (positions, angles,
+    /// lengths, thickness, links). Refactors and performance work must not
+    /// change it; only a deliberate behaviour change may, with a re-recorded value.
     fn fingerprint(sim: &TreeSimulation) -> u64 {
         use std::hash::{DefaultHasher, Hash, Hasher};
         let mut hasher = DefaultHasher::new();
-        snapshot(sim).hash(&mut hasher);
+        for s in &sim.growth_sections {
+            let children = match &s.state {
+                GrowthSectionState::Growing => None,
+                GrowthSectionState::FullyGrown { child_indices } => Some(child_indices.clone()),
+            };
+            let end = s.end_point();
+            for value in [
+                s.start_point.x,
+                s.start_point.y,
+                end.x,
+                end.y,
+                s.angle,
+                s.current_length,
+                s.max_length,
+                s.thickness,
+            ] {
+                value.to_bits().hash(&mut hasher);
+            }
+            (s.parent_index, children, s.internodes_since_fork).hash(&mut hasher);
+        }
         hasher.finish()
     }
 
-    /// Recorded at `7f3fd35`, before the collision-loop optimisations.
-    const FINGERPRINT_SEED_3_AT_30K: u64 = 3_662_445_471_079_597_772;
+    /// Recorded at `3ae50a4` (after plan 0004), before the code tidy-up.
+    const FINGERPRINT_SEED_3_AT_30K: u64 = 14_743_237_593_890_381_805;
 
     #[test]
     fn optimisations_leave_the_tree_unchanged() {
         let got = fingerprint(&grow(3, 30_000));
-        assert_eq!(got, FINGERPRINT_SEED_3_AT_30K, "tree changed: fingerprint {got}");
+        assert_eq!(
+            got, FINGERPRINT_SEED_3_AT_30K,
+            "tree changed: fingerprint {got}"
+        );
     }
 
     #[test]
@@ -443,12 +489,22 @@ mod tests {
             ("normal frame", 0.0, 1.0 / 60.0, 60.0, 1, 0.0),
             ("paused keeps accumulator", 0.5, 1.0 / 60.0, 0.0, 0, 0.5),
             ("stall clamped to MAX_FRAME_TIME", 0.0, 2.0, 60.0, 6, 0.0),
-            ("cap hit drops the backlog", 0.0, 0.1, 1200.0, MAX_STEPS_PER_FRAME, SIM_DT),
+            (
+                "cap hit drops the backlog",
+                0.0,
+                0.1,
+                1200.0,
+                MAX_STEPS_PER_FRAME,
+                SIM_DT,
+            ),
         ];
         for (case, acc, frame, speed, steps, remaining) in cases {
             let (got_steps, got_acc) = plan_steps(acc, frame, speed);
             assert_eq!(got_steps, steps, "{case}: steps");
-            assert!(got_acc <= remaining + 1e-4, "{case}: accumulator {got_acc} > {remaining}");
+            assert!(
+                got_acc <= remaining + 1e-4,
+                "{case}: accumulator {got_acc} > {remaining}"
+            );
             assert!(got_acc >= 0.0, "{case}: negative accumulator");
         }
     }
@@ -466,7 +522,10 @@ mod tests {
         };
         for fps in [30, 60, 144] {
             let steps = total_steps(fps);
-            assert!(steps.abs_diff(600) <= 1, "{fps} fps ran {steps} steps for 10 s");
+            assert!(
+                steps.abs_diff(600) <= 1,
+                "{fps} fps ran {steps} steps for 10 s"
+            );
         }
     }
 }

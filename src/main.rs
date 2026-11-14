@@ -59,7 +59,11 @@ async fn main() {
         let raw_delta_time = get_frame_time();
 
         // --- UPDATE SIMULATION (fixed steps; see plan_steps) ---
-        let speed = if is_paused { 0.0 } else { sim_speed * SPEED_SCALE };
+        let speed = if is_paused {
+            0.0
+        } else {
+            sim_speed * SPEED_SCALE
+        };
         let (steps, next_accumulator) = plan_steps(sim_accumulator, raw_delta_time, speed);
         sim_accumulator = next_accumulator;
         for _ in 0..steps {

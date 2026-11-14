@@ -19,10 +19,14 @@ fn grow_to_finish(seed: u64) -> usize {
 
 fn full_runs(c: &mut Criterion) {
     let mut group = c.benchmark_group("grow_to_finish");
-    group.sample_size(10).measurement_time(Duration::from_secs(5));
+    group
+        .sample_size(10)
+        .measurement_time(Duration::from_secs(5));
     // Seed 1 is the largest of seeds 1-20 (2,083 sections), seed 3 among the smallest.
     for seed in [1, 2, 3] {
-        group.bench_function(format!("seed_{seed}"), |b| b.iter(|| grow_to_finish(black_box(seed))));
+        group.bench_function(format!("seed_{seed}"), |b| {
+            b.iter(|| grow_to_finish(black_box(seed)))
+        });
     }
     group.finish();
 }

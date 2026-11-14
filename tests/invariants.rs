@@ -22,7 +22,9 @@ fn assert_links_valid(sim: &TreeSimulation, seed: u64) {
                     child_indices.contains(&i),
                     "seed {seed}: parent {p} doesn't list child {i}"
                 ),
-                GrowthSectionState::Growing => panic!("seed {seed}: parent {p} of {i} still growing"),
+                GrowthSectionState::Growing => {
+                    panic!("seed {seed}: parent {p} of {i} still growing")
+                }
             }
             assert_eq!(
                 section.start_point,
@@ -34,8 +36,15 @@ fn assert_links_valid(sim: &TreeSimulation, seed: u64) {
         }
         if let GrowthSectionState::FullyGrown { child_indices } = &section.state {
             for &c in child_indices {
-                assert!(c > i && c < sections.len(), "seed {seed}: child {c} of {i} out of range");
-                assert_eq!(sections[c].parent_index, Some(i), "seed {seed}: child {c} doesn't point back to {i}");
+                assert!(
+                    c > i && c < sections.len(),
+                    "seed {seed}: child {c} of {i} out of range"
+                );
+                assert_eq!(
+                    sections[c].parent_index,
+                    Some(i),
+                    "seed {seed}: child {c} doesn't point back to {i}"
+                );
             }
         }
     }
@@ -48,7 +57,17 @@ fn frozen_geometry(sim: &TreeSimulation) -> Vec<(usize, String)> {
         .enumerate()
         .filter(|(_, s)| matches!(s.state, GrowthSectionState::FullyGrown { .. }))
         .map(|(i, s)| {
-            (i, format!("{:?} {:?} {} {} {}", s.start_point, s.end_point(), s.angle, s.thickness, s.max_length))
+            (
+                i,
+                format!(
+                    "{:?} {:?} {} {} {}",
+                    s.start_point,
+                    s.end_point(),
+                    s.angle,
+                    s.thickness,
+                    s.max_length
+                ),
+            )
         })
         .collect()
 }
@@ -61,7 +80,11 @@ fn assert_frozen_sections_never_change(seed: u64, first: usize, more: usize) {
     }
     let after = frozen_geometry(&sim);
     for (i, geometry) in &before {
-        let now = &after.iter().find(|(j, _)| j == i).expect("frozen section vanished").1;
+        let now = &after
+            .iter()
+            .find(|(j, _)| j == i)
+            .expect("frozen section vanished")
+            .1;
         assert_eq!(now, geometry, "seed {seed}: frozen section {i} changed");
     }
 }
@@ -85,7 +108,10 @@ fn arena_invariants_hold_to_finish() {
         while !sim.is_finished() {
             sim.step();
             steps += 1;
-            assert!(steps <= 220_000, "seed {seed}: unfinished after 220,000 steps");
+            assert!(
+                steps <= 220_000,
+                "seed {seed}: unfinished after 220,000 steps"
+            );
         }
         assert_links_valid(&sim, seed);
     }

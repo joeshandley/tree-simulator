@@ -74,18 +74,40 @@ fn main() {
     let mut table = vec![
         "| Metric | Mean | Min | Max |".to_string(),
         "|---|---|---|---|".to_string(),
-        row("Years to finish", &col(&|r| Some(r.steps as f64 / 8_760.0)), 1),
+        row(
+            "Years to finish",
+            &col(&|r| Some(r.steps as f64 / 8_760.0)),
+            1,
+        ),
         row("Sections", &col(&|r| Some(r.metrics.sections as f64)), 0),
         row("Tips", &col(&|r| Some(r.metrics.tips as f64)), 0),
         row("Height (m)", &col(&|r| Some(r.metrics.height as f64)), 2),
-        row("Crown width (m)", &col(&|r| Some(r.metrics.crown_width as f64)), 2),
-        row("Fork angle (°)", &col(&|r| r.metrics.mean_fork_angle_deg.map(f64::from)), 1),
-        row("Leonardo ratio", &col(&|r| r.metrics.mean_leonardo_ratio.map(f64::from)), 3),
+        row(
+            "Crown width (m)",
+            &col(&|r| Some(r.metrics.crown_width as f64)),
+            2,
+        ),
+        row(
+            "Fork angle (°)",
+            &col(&|r| r.metrics.mean_fork_angle_deg.map(f64::from)),
+            1,
+        ),
+        row(
+            "Leonardo ratio",
+            &col(&|r| r.metrics.mean_leonardo_ratio.map(f64::from)),
+            3,
+        ),
         row("Time per step (µs)", &col(&|r| Some(r.micros_per_step)), 0),
-        row("Slowest step (µs)", &col(&|r| Some(r.slowest_step_micros)), 0),
+        row(
+            "Slowest step (µs)",
+            &col(&|r| Some(r.slowest_step_micros)),
+            0,
+        ),
     ];
     if unfinished > 0 {
-        table.push(format!("\n{unfinished} of {seeds} trees hit the {MAX_STEPS}-step cap."));
+        table.push(format!(
+            "\n{unfinished} of {seeds} trees hit the {MAX_STEPS}-step cap."
+        ));
     }
     let table = table.join("\n");
     println!("{seeds} seeded trees (seeds 1-{seeds}), release build\n\n{table}");
