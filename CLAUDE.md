@@ -60,6 +60,8 @@ Requires Xcode Command Line Tools for the linker. The crate uses edition 2024, s
 | `src/lib.rs` | Library root; re-exports `GrowthSection`, `TreeSimulation`, `Vector2D`. |
 | `src/vector.rs` | `Vector2D` maths: angle, dot, point-to-segment distance, ray–segment intersection. `ANGLE_UP` constant. |
 | `src/growth_section.rs` | One internode (`GrowthSection`): growth and tropism physics, `freeze`, and the pure `should_fork` rule. |
+| `src/params.rs` | `GrowthParams`: every tunable, in metres and hours, each with its source or "estimate". |
+| `src/metrics.rs` | Tree metrics for the measurement harness. |
 | `src/simulation.rs` | `TreeSimulation`: per-frame update loop, collision and shade sampling, fork/continue/terminate decisions, tuning parameters. |
 | `src/main.rs` | Binary: window, camera, drawing branches and leaves, input, leaf timers. |
 | `src/ui.rs` | Immediate-mode toggle button and slider. |
@@ -70,6 +72,7 @@ Requires Xcode Command Line Tools for the linker. The crate uses edition 2024, s
 - **Two-pass update.** `update` iterates over a snapshot length (`num_sections`), collects new children in `new_sections`, then appends them after the loop. Child indices are computed as `num_sections + new_sections.len()` before the push.
 - **Frozen is final.** Once `freeze` runs, a section's state is `FullyGrown` and `end_point()` returns `cached_end_point`. Its geometry never changes again. New children take their `start_point` from the parent's end point at creation time.
 - **Leaves are terminal sections.** A leaf is drawn on any `FullyGrown` section with empty `child_indices`.
+- **Units.** The simulation works in metres, hours and radians; every tunable lives in `GrowthParams` (`src/params.rs`) with its unit and source. Only `main.rs` converts metres to pixels (`PX_PER_M`).
 - **Screen coordinates.** +Y points down, so up is `ANGLE_UP = -π/2`.
 - **`should_fork` stays pure.** Randomness is passed in (`jitter_roll`) so it can be unit-tested.
 - **Fixed timestep.** The simulation only advances through `TreeSimulation::step()`, one `SIM_DT` at a time; `main.rs` turns real time into steps with `plan_steps`. Never pass frame time into the simulation.

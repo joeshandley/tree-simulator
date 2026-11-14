@@ -12,6 +12,7 @@ Records 0001–0004 were written on 13 Nov 2026 from the author's build notes (`
 | [0002](0002-internode-subdivision-freeze.md) | Internode subdivision with freeze on completion | Accepted | Yes (`51eda3c`, 31 Jul 2026) |
 | [0003](0003-sympodial-apical-dominance.md) | Sympodial apical dominance at forks | Accepted | Yes (`3ab7b03`, 3 Aug 2026) |
 | [0004](0004-resource-driven-graph.md) | Resource-driven graph instead of a pre-allocated L-system | Accepted | No |
+| [0005](0005-section-is-an-internode.md) | One section is one botanical internode | Accepted | Yes (plan 0003, 14 Nov 2026) |
 
 ## Rules
 
