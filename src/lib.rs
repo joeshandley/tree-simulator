@@ -1,4 +1,5 @@
 pub mod growth_section;
+pub mod metrics;
 pub mod simulation;
 pub mod vector;
 
