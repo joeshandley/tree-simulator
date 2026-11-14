@@ -1,4 +1,4 @@
-use macroquad::prelude::*;
+use macroquad::rand::RandGenerator;
 
 use crate::growth_section::{GrowthSection, GrowthSectionState, should_fork};
 use crate::vector::{ANGLE_UP, Vector2D};
@@ -24,8 +24,34 @@ const ANCESTOR_SKIP_DEPTH: usize = 10;
 const LENGTH_JITTER_FRACTION: f32 = 0.08;
 
 /// Applies `LENGTH_JITTER_FRACTION` variation to a target internode length.
-fn jittered_length(length: f32) -> f32 {
-    length * (1.0 + rand::gen_range(-LENGTH_JITTER_FRACTION, LENGTH_JITTER_FRACTION))
+fn jittered_length(length: f32, rng: &RandGenerator) -> f32 {
+    length * (1.0 + rng.gen_range(-LENGTH_JITTER_FRACTION, LENGTH_JITTER_FRACTION))
+}
+
+/// Simulated seconds per step. Every step is the same size so a tree's shape
+/// depends only on its seed and step count, never on frame rate or speed
+/// (plan 0001).
+pub const SIM_DT: f32 = 1.0 / 60.0;
+
+/// Longest real frame time fed to the simulation. A stall (window drag, sleep)
+/// counts as this much time instead of its full length.
+pub const MAX_FRAME_TIME: f32 = 0.1;
+
+/// Most steps run in one frame. Past this the simulation slows down rather
+/// than piling up a backlog to catch up on later.
+pub const MAX_STEPS_PER_FRAME: u32 = 64;
+
+/// Turns one frame's real time into a number of fixed steps.
+/// `speed` is simulated seconds per real second (0 when paused). Returns the
+/// steps to run and the accumulator to carry into the next frame.
+pub fn plan_steps(accumulator: f32, frame_time: f32, speed: f32) -> (u32, f32) {
+    let total = accumulator + frame_time.min(MAX_FRAME_TIME) * speed;
+    // The epsilon stops f32 rounding (e.g. 0.1 / (1/60) = 5.9999995) losing a step.
+    let available = ((total / SIM_DT) + 1e-4).floor() as u32;
+    let steps = available.min(MAX_STEPS_PER_FRAME);
+    // Capping at SIM_DT drops any backlog when the cap was hit (slow down).
+    let remaining = (total - steps as f32 * SIM_DT).clamp(0.0, SIM_DT);
+    (steps, remaining)
 }
 
 /// How strongly a fork's leader-side coin flip is biased toward correcting
@@ -61,10 +87,15 @@ pub struct TreeSimulation {
     pub internode_length: f32, // Target length of each internode before it freezes
     pub fork_interval: u32,    // Baseline # of internodes between forks along an axis
     pub fork_jitter: u32,      // +/- range applied to fork_interval so forking isn't metronomic
+    /// Seed the current tree was grown from; `reset` with the same seed regrows it.
+    pub seed: u64,
+    /// The simulation's only source of randomness. Owned rather than global so
+    /// parallel tests and future headless runs can't disturb each other.
+    rng: RandGenerator,
 }
 
 impl TreeSimulation {
-    pub fn new(trunk_start: Vector2D, trunk_thickness: f32) -> Self {
+    pub fn new(trunk_start: Vector2D, trunk_thickness: f32, seed: u64) -> Self {
         let internode_length = 12.0;
         let trunk = GrowthSection::new(
             trunk_start,
@@ -95,10 +126,17 @@ impl TreeSimulation {
             // tree bigger without a combinatorial blowup in section count.
             fork_interval: 9,
             fork_jitter: 3, // Keeps the same +/-33% relative jitter as before
+            seed,
+            rng: seeded_rng(seed),
         }
     }
 
-    pub fn update(&mut self, delta_time: f32) {
+    /// Advances the simulation by one fixed step of `SIM_DT`.
+    pub fn step(&mut self) {
+        self.update(SIM_DT);
+    }
+
+    fn update(&mut self, delta_time: f32) {
         // Convert the azimuth angle into a normalized directional vector
         let global_light_dir = Vector2D {
             x: self.sun_azimuth.cos(),
@@ -213,7 +251,7 @@ impl TreeSimulation {
                 }
 
                 let end_pos = section.end_point();
-                let jitter_roll = rand::gen_range(0.0, 1.0);
+                let jitter_roll = self.rng.gen_range(0.0, 1.0);
                 let fork_due = should_fork(
                     section.internodes_since_fork,
                     self.fork_interval,
@@ -261,7 +299,7 @@ impl TreeSimulation {
                     let restoring_direction = (ANGLE_UP - section.angle).sin();
                     let leader_on_left_probability =
                         (0.5 - restoring_direction * LEADER_CORRECTION_STRENGTH).clamp(0.1, 0.9);
-                    let leader_on_left = rand::gen_range(0.0, 1.0) < leader_on_left_probability;
+                    let leader_on_left = self.rng.gen_range(0.0, 1.0) < leader_on_left_probability;
                     let (leader_angle, lateral_angle) = if leader_on_left {
                         (
                             section.angle - leader_angle_offset,
@@ -281,7 +319,7 @@ impl TreeSimulation {
                         new_sections.push(GrowthSection::new(
                             end_pos,
                             leader_angle,
-                            jittered_length(leader_length),
+                            jittered_length(leader_length, &self.rng),
                             leader_thickness,
                             Some(i),
                         ));
@@ -291,7 +329,7 @@ impl TreeSimulation {
                         new_sections.push(GrowthSection::new(
                             end_pos,
                             lateral_angle,
-                            jittered_length(lateral_length),
+                            jittered_length(lateral_length, &self.rng),
                             lateral_thickness,
                             Some(i),
                         ));
@@ -306,7 +344,7 @@ impl TreeSimulation {
                     let mut child = GrowthSection::new(
                         end_pos,
                         section.angle,
-                        jittered_length(section.max_length),
+                        jittered_length(section.max_length, &self.rng),
                         section.thickness,
                         Some(i),
                     );
@@ -335,7 +373,9 @@ impl TreeSimulation {
             .all(|section| matches!(section.state, GrowthSectionState::FullyGrown { .. }))
     }
 
-    pub fn reset(&mut self, trunk_start: Vector2D, trunk_thickness: f32) {
+    pub fn reset(&mut self, trunk_start: Vector2D, trunk_thickness: f32, seed: u64) {
+        self.seed = seed;
+        self.rng = seeded_rng(seed);
         let trunk = GrowthSection::new(
             trunk_start,
             ANGLE_UP,
@@ -344,5 +384,85 @@ impl TreeSimulation {
             None,
         );
         self.growth_sections = vec![trunk];
+    }
+}
+
+fn seeded_rng(seed: u64) -> RandGenerator {
+    let rng = RandGenerator::new();
+    rng.srand(seed);
+    rng
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const START: Vector2D = Vector2D { x: 0.0, y: 0.0 };
+
+    fn grow(seed: u64, steps: usize) -> TreeSimulation {
+        let mut sim = TreeSimulation::new(START, 20.0, seed);
+        for _ in 0..steps {
+            sim.step();
+        }
+        sim
+    }
+
+    fn snapshot(sim: &TreeSimulation) -> String {
+        format!("{:?}", sim.growth_sections)
+    }
+
+    #[test]
+    fn same_seed_grows_identical_tree() {
+        assert_eq!(snapshot(&grow(42, 800)), snapshot(&grow(42, 800)));
+    }
+
+    #[test]
+    fn reset_with_same_seed_regrows_identical_tree() {
+        let mut sim = grow(7, 800);
+        let first = snapshot(&sim);
+        sim.reset(START, 20.0, 7);
+        for _ in 0..800 {
+            sim.step();
+        }
+        assert_eq!(snapshot(&sim), first);
+    }
+
+    #[test]
+    fn different_seeds_grow_different_trees() {
+        assert_ne!(snapshot(&grow(1, 800)), snapshot(&grow(2, 800)));
+    }
+
+    #[test]
+    fn plan_steps_cases() {
+        // (case, accumulator, frame_time, speed, expected steps, expected accumulator)
+        let cases = [
+            ("normal frame", 0.0, SIM_DT, 1.0, 1, 0.0),
+            ("paused keeps accumulator", 0.5 * SIM_DT, SIM_DT, 0.0, 0, 0.5 * SIM_DT),
+            ("stall clamped to MAX_FRAME_TIME", 0.0, 2.0, 1.0, 6, 0.0),
+            ("cap hit drops the backlog", 0.0, 0.1, 20.0, MAX_STEPS_PER_FRAME, SIM_DT),
+        ];
+        for (case, acc, frame, speed, steps, remaining) in cases {
+            let (got_steps, got_acc) = plan_steps(acc, frame, speed);
+            assert_eq!(got_steps, steps, "{case}: steps");
+            assert!(got_acc <= remaining + 1e-6, "{case}: accumulator {got_acc} > {remaining}");
+            assert!(got_acc >= 0.0, "{case}: negative accumulator");
+        }
+    }
+
+    #[test]
+    fn simulated_time_is_independent_of_frame_rate() {
+        let total_steps = |fps: u32| {
+            let (mut acc, mut total) = (0.0, 0u32);
+            for _ in 0..fps * 10 {
+                let (steps, next) = plan_steps(acc, 1.0 / fps as f32, 1.0);
+                acc = next;
+                total += steps;
+            }
+            total
+        };
+        for fps in [30, 60, 144] {
+            let steps = total_steps(fps);
+            assert!(steps.abs_diff(600) <= 1, "{fps} fps ran {steps} steps for 10 s");
+        }
     }
 }

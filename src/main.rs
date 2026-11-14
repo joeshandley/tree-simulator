@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use tree_simulator::simulation::{SIM_DT, plan_steps};
 use tree_simulator::{GrowthSectionState, TreeSimulation, Vector2D};
 
 mod ui;
@@ -6,6 +7,14 @@ mod ui;
 // Default screen dimensions
 const SCREEN_WIDTH: f32 = 800.0;
 const SCREEN_HEIGHT: f32 = 600.0;
+
+/// A fresh seed from the clock, so each new tree differs unless regrown on purpose.
+fn new_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+}
 
 fn window_conf() -> Conf {
     Conf {
@@ -26,7 +35,8 @@ async fn main() {
 
     let trunk_thickness = 20.0;
 
-    let mut sim = TreeSimulation::new(trunk_start, trunk_thickness);
+    let mut sim = TreeSimulation::new(trunk_start, trunk_thickness, new_seed());
+    let mut sim_accumulator: f32 = 0.0;
 
     // Initialize Camera State
     // Target starts focused on the middle of the screen
@@ -44,15 +54,15 @@ async fn main() {
     loop {
         let raw_delta_time = get_frame_time();
 
-        // --- APPLY SPEED MULTIPLIER ---
-        let delta_time = if is_paused {
-            0.0
-        } else {
-            raw_delta_time * sim_speed * SPEED_SCALE
-        };
-
-        // --- UPDATE SIMULATION ---
-        sim.update(delta_time);
+        // --- UPDATE SIMULATION (fixed steps; see plan_steps) ---
+        let speed = if is_paused { 0.0 } else { sim_speed * SPEED_SCALE };
+        let (steps, next_accumulator) = plan_steps(sim_accumulator, raw_delta_time, speed);
+        sim_accumulator = next_accumulator;
+        for _ in 0..steps {
+            sim.step();
+        }
+        // Simulated time actually stepped, so leaves pause and slow down with the tree.
+        let delta_time = steps as f32 * SIM_DT;
 
         // Update Leaf Growth Timers
         if show_leaves {
@@ -147,7 +157,7 @@ async fn main() {
 
         // --- UI OVERLAY ---
         draw_text(
-            "Controls: [Scroll / +/-] Zoom | [Space] Play/Pause | [Click + Drag] Pan | [R] Reset Tree | [C] Center View",
+            "Controls: [Scroll / +/-] Zoom | [Space] Play/Pause | [Click + Drag] Pan | [R] New Tree | [Shift+R] Regrow | [C] Center View",
             10.0,
             25.0,
             16.0,
@@ -155,9 +165,10 @@ async fn main() {
         );
         draw_text(
             &format!(
-                "Number of Growth Sections: {} | Zoom: {:.1}x",
+                "Number of Growth Sections: {} | Zoom: {:.1}x | Seed: {}",
                 sim.growth_sections.len(),
-                zoom_level
+                zoom_level,
+                sim.seed
             ),
             10.0,
             50.0,
@@ -195,8 +206,12 @@ async fn main() {
         // --- INPUT HANDLING ---
 
         // Reset Simulation
+        // R grows a new tree; Shift+R regrows the same seed.
         if is_key_pressed(KeyCode::R) {
-            sim.reset(trunk_start, trunk_thickness);
+            let shift = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
+            let seed = if shift { sim.seed } else { new_seed() };
+            sim.reset(trunk_start, trunk_thickness, seed);
+            sim_accumulator = 0.0;
         }
 
         // Pause Simulation
