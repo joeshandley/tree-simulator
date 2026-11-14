@@ -69,7 +69,14 @@ impl GrowthSection {
     /// `cached_end_point` at creation time rather than resurrecting a per-frame
     /// position-sync pass.
     pub fn freeze(&mut self, child_indices: Vec<usize>) {
-        self.cached_end_point = self.end_point();
+        self.freeze_at(self.end_point(), child_indices);
+    }
+
+    /// `freeze` with an end point the caller already computed and handed to the
+    /// children as their start. Computing it twice can differ in the last bit in
+    /// release builds, which would detach children from their parent.
+    pub fn freeze_at(&mut self, end_point: Vector2D, child_indices: Vec<usize>) {
+        self.cached_end_point = end_point;
         self.state = GrowthSectionState::FullyGrown { child_indices };
     }
 

@@ -338,7 +338,7 @@ impl TreeSimulation {
                     // Both may fail the viability floor (rare at dominance_ratio
                     // extremes) — freezing with an empty child list terminates
                     // this axis for good, same as the old symmetric behavior.
-                    section.freeze(child_indices);
+                    section.freeze_at(end_pos, child_indices);
                 } else {
                     // Continuation: same angle/thickness/target length, no decay applied.
                     let mut child = GrowthSection::new(
@@ -352,7 +352,7 @@ impl TreeSimulation {
 
                     let child_idx = num_sections + new_sections.len();
 
-                    section.freeze(vec![child_idx]);
+                    section.freeze_at(end_pos, vec![child_idx]);
 
                     new_sections.push(child);
                 }
